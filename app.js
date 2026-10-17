@@ -28,6 +28,21 @@
   const STAGES = ["Not applied yet", "Applied", "Assessment or tests", "Interview", "Final stage", "Offer"];
   const CVS = ["", ...C.cvs];
 
+  // Job agent settings. content.js can override any of these with an "agent" entry.
+  const AGENT = Object.assign({
+    terms: ["Junior Data Analyst", "Graduate Data Analyst", "IT Support Analyst", "Service Desk Analyst", "CRM Analyst", "Junior Business Analyst"],
+    location: "Hull",
+    miles: 25,
+    // Skills and words that make a job a better fit, with how much each one counts.
+    skills: {
+      "python": 3, "sql": 3, "pandas": 2, "scikit": 2, "tensorflow": 2, "machine learning": 3, "nlp": 2, "natural language": 2,
+      "data analys": 3, "data scien": 3, "power bi": 1, "tableau": 1, "excel": 1, "statistic": 1, "forecast": 1, "dashboard": 1, "reporting": 1,
+      "it support": 3, "service desk": 3, "helpdesk": 2, "help desk": 2, "1st line": 2, "first line": 2, "2nd line": 1, "second line": 1,
+      "microsoft 365": 1, "office 365": 1, "wordpress": 2, "salesforce": 2, "crm": 2, "business analys": 3,
+      "graduate": 2, "junior": 2, "entry level": 2, "trainee": 1
+    }
+  }, C.agent || {});
+
   // ---------- helpers ----------
   // h("div", {class: "x", onclick: fn}, child, "text") builds an element. Text is always inserted as text, never HTML.
   function h(tag, attrs, ...kids) {
@@ -85,6 +100,10 @@
   let settings = { weeklyTarget: C.defaultWeeklyTarget || 8, checks: {} };
   let editing = null;
   let recovering = false;   // true while the user is setting a new password after a reset email
+  let userRole = null;      // "owner" (can edit), "viewer" (read only) or "pending" (waiting for approval)
+  let entered = false;      // true once the signed-in user has been routed to the right screen
+  let signupMode = false;   // sign-in screen is showing "create a view-only account"
+  let viewers = [];         // view-only requests (owner only); null when the feature isn't set up
 
   // ---------- data layer ----------
   // Database columns are snake_case; the app uses camelCase.
@@ -137,6 +156,7 @@
       loaded = true; lastLoad = Date.now();
       $("#storeBanner").hidden = true;
       renderAll();
+      if (userRole === "owner") loadViewers();
     } catch (err) {
       console.error(err);
       showBanner("Your applications couldn't load. Check your connection, then reload the page. If this keeps happening, your free Supabase project may be paused: open the Supabase dashboard and click Resume project.");
@@ -162,6 +182,7 @@
   }
   let settingsChain = Promise.resolve();
   function saveSettings() {
+    if (userRole !== "owner") return;
     const body = { user_id: session.user.id, weekly_target: settings.weeklyTarget, checks: settings.checks || {} };
     settingsChain = settingsChain
       .then(async () => { const { error } = await sb.from("settings").upsert(body); if (error) throw error; })
@@ -173,6 +194,7 @@
     const name = C.ownerName ? `${C.ownerName}'s Job Hunt` : "Job Hunt";
     document.title = name;
     document.querySelectorAll(".js-title").forEach(el => { el.textContent = name; });
+    document.querySelectorAll(".js-owner").forEach(el => { el.textContent = C.ownerName || "The owner"; });
     if (GOAL) {
       const goalText = `${GOAL.getDate()} ${MONTH_LONG[GOAL.getMonth()]} ${GOAL.getFullYear()}`;
       $("#goalLine").textContent = `Application tracker · goal: a job offer by ${goalText}`;
@@ -470,6 +492,7 @@
         const key = p.id + "-" + i;
         const cb = h("input", { type: "checkbox", id: "chk-" + key });
         cb.checked = !!settings.checks[key];
+        cb.disabled = userRole !== "owner";
         cb.addEventListener("change", () => { settings.checks = { ...settings.checks, [key]: cb.checked }; saveSettings(); renderPlan(); });
         return h("li", null, h("label", { for: "chk-" + key }, cb, h("span", null, task)));
       });
@@ -483,12 +506,16 @@
     }
     const tgt = $("#target");
     if (document.activeElement !== tgt) tgt.value = settings.weeklyTarget;
+    tgt.disabled = userRole !== "owner";
   }
 
   function renderAll() {
     renderHeader(); renderCountdown(); renderKpis(); renderWeekChart(); renderAttention(); renderTable();
     renderFunnel(); renderDrop(); renderByTrack(); renderFeedback(); renderTracks(); renderPlan();
-    $("#whoLbl").textContent = session ? "Signed in as " + session.user.email : "";
+    $("#whoLbl").textContent = session ? "Signed in as " + session.user.email + (userRole === "viewer" ? " (view only)" : "") : "";
+    const rb = $("#roleBanner");
+    rb.hidden = userRole !== "viewer";
+    if (userRole === "viewer") rb.textContent = `View only. You're looking at ${C.ownerName || "the owner"}'s tracker, and only ${C.ownerName || "they"} can make changes.`;
   }
   function showBanner(text) { const b = $("#storeBanner"); b.textContent = text; b.hidden = false; }
 
@@ -519,10 +546,15 @@
     $("#f-nextdate").value = v.nextActionDate || "";
     $("#f-feedback").value = v.feedback || "";
     $("#f-notes").value = v.notes || "";
+    const ro = userRole !== "owner";
+    for (const el of $("#edForm").elements) el.disabled = ro;
     const del = $("#edDelete");
-    del.hidden = !a; del.classList.remove("armed"); del.textContent = "Delete";
+    del.hidden = !a || ro; del.classList.remove("armed"); del.textContent = "Delete";
+    $("#edSave").hidden = ro;
+    $("#edCancel").textContent = ro ? "Close" : "Cancel";
+    if (ro) chk.hidden = true;
     $("#editor").hidden = false;
-    setTimeout(() => $("#f-company").focus(), 30);
+    setTimeout(() => (ro ? $("#edClose") : $("#f-company")).focus(), 30);
   }
   function closeEditor() { $("#editor").hidden = true; editing = null; }
   async function saveEditor() {
@@ -559,6 +591,182 @@
     if (!del.classList.contains("armed")) { del.classList.add("armed"); del.textContent = "Tap again to delete"; return; }
     try { await deleteApplication(editing.id); closeEditor(); toast("Application deleted"); }
     catch (err) { console.error(err); toast("That didn't delete. Try again."); }
+  }
+
+  // ---------- job agent ----------
+  // Searches Reed through the find-jobs function in Supabase, then scores each job here in the browser.
+  let agentJobs = [];
+  let agentShown = 24;
+  let agentSearched = false;
+  const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const SKILL_RES = Object.entries(AGENT.skills).map(([k, w]) => [k, +w || 0, new RegExp("(^|[^a-z0-9])" + escapeRe(k.toLowerCase()), "i")]);
+  function readStore(key, fallback) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; } }
+  function writeStore(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private browsing */ } }
+  const hiddenJobs = () => new Set(readStore("jobAgentHidden", []));
+  const SKILL_LABELS = { "data analys": "data analysis", "data scien": "data science", "business analys": "business analysis",
+    "scikit": "scikit-learn", "statistic": "statistics", "forecast": "forecasting", "sql": "SQL", "python": "Python", "nlp": "NLP",
+    "crm": "CRM", "power bi": "Power BI", "it support": "IT support", "microsoft 365": "Microsoft 365", "office 365": "Office 365",
+    "wordpress": "WordPress", "salesforce": "Salesforce", "tensorflow": "TensorFlow", "excel": "Excel", "tableau": "Tableau" };
+
+  function scoreJob(j) {
+    const title = (j.title || "").toLowerCase();
+    const text = (title + " " + (j.summary || "")).toLowerCase();
+    let raw = 0;
+    const hits = [];
+    for (const [k, w, re] of SKILL_RES) {
+      if (re.test(text)) { raw += w * (re.test(title) ? 2 : 1); hits.push(SKILL_LABELS[k] || k); }
+    }
+    let score = Math.min(100, raw / 16 * 100);
+    const flags = [], good = [];
+    if (/\b(senior|sr\.?|lead|principal|head of|director)\b/i.test(j.title || "")) { flags.push("Senior role"); score *= 0.5; }
+    else if (/\bmanager\b/i.test(j.title || "")) { flags.push("Manager role"); score *= 0.7; }
+    const years = [...text.matchAll(/(\d{1,2})\s*\+?\s*(?:years|yrs)/g)].map(m => +m[1]).filter(n => n >= 3 && n <= 20);
+    if (years.length) { flags.push(`Asks for ${Math.max(...years)}+ years`); score *= 0.7; }
+    if (/security clearance|\b(sc|dv)\b (cleared|clearance)/i.test(text)) { flags.push("Security clearance"); score *= 0.8; }
+    if (/driving licen[cs]e|own (car|vehicle|transport)/i.test(text)) flags.push("Driving licence");
+    if (/\bphd\b|doctorate/i.test(text)) { flags.push("PhD"); score *= 0.7; }
+    if (/\bgraduate\b|\bentry[- ]level\b|\bjunior\b|\btrainee\b/i.test(text)) good.push("Entry level");
+    if (/\bremote\b|work from home/i.test(text)) good.push("Remote");
+    else if (/\bhybrid\b/i.test(text)) good.push("Hybrid");
+    return { score: Math.round(score), hits: hits.slice(0, 6), flags, good };
+  }
+  function guessTrack(j) {
+    const t = ((j.title || "") + " " + (j.summary || "")).toLowerCase();
+    if (/graduate (scheme|programme|program)/.test(t)) return "grad";
+    if (/it support|service desk|help ?desk|technician|1st line|2nd line|first line|second line/.test(t)) return "it";
+    if (/business analys|\bcrm\b|salesforce/.test(t)) return "ba";
+    if (/\bdata\b|analyst|insight|reporting|machine learning|scien/.test(t)) return "data";
+    if (/recruitment|admissions|student/.test(t)) return "edu";
+    if (/security officer|door supervisor|\bsia\b/.test(t)) return "security";
+    return "other";
+  }
+  const money = n => "£" + Math.round(n).toLocaleString("en-GB");
+  function salaryText(j) {
+    if (j.salaryMin && j.salaryMax && j.salaryMax !== j.salaryMin) return `${money(j.salaryMin)} to ${money(j.salaryMax)}`;
+    if (j.salaryMin || j.salaryMax) return money(j.salaryMin || j.salaryMax);
+    return "";
+  }
+  function inTracker(j) {
+    const co = (j.employer || "").toLowerCase(), ro = (j.title || "").toLowerCase();
+    return apps.some(a => (j.url && a.url === j.url) || a.ref === "Reed " + j.id ||
+      ((a.company || "").toLowerCase() === co && (a.role || "").toLowerCase() === ro));
+  }
+  async function addJobToTracker(j, btn) {
+    const track = guessTrack(j);
+    const tk = TRACKS.find(t => t.id === track);
+    const closes = parseD(j.closes);
+    let next = closes ? addDays(closes, -2) : addDays(today(), 3);
+    if (next < today()) next = today();
+    btn.disabled = true;
+    try {
+      await saveApplication({
+        company: j.employer || "Unknown employer", role: j.title, track, location: j.location, status: "saved", furthest: 0,
+        dateApplied: "", closingDate: j.closes || "", source: "Reed (job agent)", cv: tk && CVS.includes(tk.cv) ? tk.cv : "",
+        ref: "Reed " + j.id, salary: salaryText(j), url: j.url, nextAction: "Apply", nextActionDate: iso(next),
+        feedback: "", notes: (j.summary || "").slice(0, 400), needsUpdate: false, checkNote: ""
+      }, null);
+      toast("Added to your tracker as To apply");
+      renderAgentResults();
+    } catch (err) {
+      console.error(err);
+      btn.disabled = false;
+      toast("That didn't save. Try again.");
+    }
+  }
+  function jobCard(j) {
+    const label = j.score >= 70 ? "Strong match" : j.score >= 45 ? "Good match" : j.score >= 20 ? "Possible match" : "Weak match";
+    const fill = h("div", { class: "bar-fill" });
+    fill.style.width = Math.max(3, j.score) + "%";
+    const added = inTracker(j);
+    const addBtn = h("button", { class: "btn small" + (added ? "" : " primary"), type: "button" }, added ? "In your tracker" : "Add to tracker");
+    if (added) addBtn.disabled = true;
+    else addBtn.addEventListener("click", () => addJobToTracker(j, addBtn));
+    const hideBtn = h("button", { class: "btn small", type: "button" }, "Hide");
+    hideBtn.addEventListener("click", () => {
+      const hid = hiddenJobs(); hid.add(j.id); writeStore("jobAgentHidden", [...hid]);
+      renderAgentResults();
+    });
+    const posted = parseD(j.posted), closes = parseD(j.closes);
+    const summary = (j.summary || "").length > 220 ? j.summary.slice(0, 217).trimEnd() + "…" : (j.summary || "");
+    const link = /^https:\/\//.test(j.url || "") ? j.url : "https://www.reed.co.uk";
+    return h("article", { class: "track" + (j.score >= 70 ? " best" : "") },
+      h("div", { class: "meta" },
+        h("span", { class: "chip nodot " + (j.score >= 70 ? "s-offer" : j.score >= 45 ? "s-applied" : "") }, `${label} · ${j.score}%`),
+        posted ? h("span", { class: "chip nodot" }, "Posted " + fmt(posted)) : null),
+      h("h3", null, j.title || "Untitled job"),
+      h("p", { class: "small muted" }, [j.employer, j.location].filter(Boolean).join(" · ")),
+      h("div", { class: "bar-track", role: "img", "aria-label": `${j.score}% match` }, fill),
+      h("p", { class: "small" }, [salaryText(j) || "Salary not shown", closes ? "Closes " + fmt(closes) : ""].filter(Boolean).join(" · ")),
+      (j.good.length || j.flags.length || j.hits.length) ? h("div", { class: "meta" },
+        j.good.map(x => h("span", { class: "chip nodot s-offer" }, x)),
+        j.flags.map(x => h("span", { class: "chip nodot k-overdue" }, x)),
+        j.hits.map(x => h("span", { class: "chip nodot" }, x))) : null,
+      summary ? h("p", { class: "small muted" }, summary) : null,
+      h("div", { class: "data-actions" },
+        h("a", { class: "btn small", href: link, target: "_blank", rel: "noopener", style: "text-decoration:none" }, "View on Reed"),
+        addBtn, hideBtn));
+  }
+  function renderAgentResults() {
+    const box = $("#ag-results");
+    box.replaceChildren();
+    if (!agentSearched) { box.append(h("p", { class: "empty" }, "Your matches will appear here. Check the job titles above, then tap Find jobs.")); return; }
+    const hid = hiddenJobs();
+    const list = agentJobs.filter(j => !hid.has(j.id));
+    const hiddenHere = agentJobs.length - list.length;
+    if (!list.length) box.append(h("p", { class: "empty" }, agentJobs.length ? "You've hidden every job from this search." : "No jobs found. Try wider distance or different job titles."));
+    else {
+      const grid = h("div", { class: "tracks" });
+      list.slice(0, agentShown).forEach(j => grid.append(jobCard(j)));
+      box.append(grid);
+    }
+    const foot = h("div", { class: "data-actions" });
+    if (list.length > agentShown) {
+      const more = h("button", { class: "btn", type: "button" }, `Show ${Math.min(24, list.length - agentShown)} more`);
+      more.addEventListener("click", () => { agentShown += 24; renderAgentResults(); });
+      foot.append(more);
+    }
+    if (hiddenHere) {
+      const unhide = h("button", { class: "btn small", type: "button" }, `Show ${hiddenHere} hidden`);
+      unhide.addEventListener("click", () => { writeStore("jobAgentHidden", []); renderAgentResults(); });
+      foot.append(unhide);
+    }
+    if (foot.childNodes.length) box.append(foot);
+  }
+  async function runAgent(e) {
+    e.preventDefault();
+    const terms = $("#ag-terms").value.split("\n").map(s => s.trim()).filter(Boolean).slice(0, 8);
+    const miles = +$("#ag-miles").value;
+    const location = miles ? $("#ag-location").value.trim() : "";
+    const status = $("#ag-status");
+    if (!terms.length) { status.textContent = "Add at least one job title."; return; }
+    if (miles && !location) { status.textContent = "Add a location, or choose Anywhere in the UK."; return; }
+    writeStore("jobAgentForm", { terms: terms.join("\n"), location: $("#ag-location").value.trim(), miles });
+    const btn = $("#ag-go");
+    btn.disabled = true;
+    status.textContent = `Searching Reed for ${terms.length} job ${terms.length === 1 ? "title" : "titles"}…`;
+    try {
+      const { data, error } = await sb.functions.invoke("find-jobs", { body: { terms, location, miles } });
+      if (error) {
+        let msg = "The job agent couldn't be reached. Check your connection and try again.";
+        const ctx = error.context;
+        if (ctx && ctx.status === 404) msg = "The job agent isn't set up yet. Deploy the find-jobs function in Supabase.";
+        else if (ctx && typeof ctx.json === "function") { try { const b = await ctx.json(); if (b && b.error) msg = b.error; } catch { /* keep default */ } }
+        status.textContent = msg;
+        return;
+      }
+      agentJobs = (data && Array.isArray(data.jobs) ? data.jobs : []).map(j => ({ ...j, ...scoreJob(j) }))
+        .sort((a, b) => b.score - a.score || (b.posted || "").localeCompare(a.posted || ""));
+      agentShown = 24;
+      agentSearched = true;
+      const strong = agentJobs.filter(j => j.score >= 70).length;
+      status.textContent = `Found ${agentJobs.length} jobs, ${strong} strong ${strong === 1 ? "match" : "matches"}.` + (data.problems && data.problems.length ? " " + data.problems[0] : "");
+      renderAgentResults();
+    } catch (err) {
+      console.error(err);
+      status.textContent = "Something went wrong. Try again.";
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   // ---------- import, export and summary ----------
@@ -634,7 +842,7 @@
 
   // ---------- sign-in ----------
   function showView(name) {
-    for (const v of ["setupView", "signinView", "recoverView", "appView"]) $("#" + v).hidden = v !== name;
+    for (const v of ["setupView", "signinView", "recoverView", "pendingView", "appView"]) $("#" + v).hidden = v !== name;
   }
   function setMsg(el, text, kind) { el.textContent = text; el.className = "msg" + (kind ? " " + kind : ""); el.hidden = !text; }
   async function signIn(e) {
@@ -642,12 +850,30 @@
     const email = $("#si-email").value.trim(), password = $("#si-password").value;
     const msg = $("#si-msg");
     if (!email || !password) { setMsg(msg, "Enter your email and password.", "err"); return; }
+    if (signupMode && password.length < 8) { setMsg(msg, "Use a password of at least 8 characters.", "err"); return; }
     $("#si-submit").disabled = true;
-    setMsg(msg, "Signing in…");
+    setMsg(msg, signupMode ? "Creating your account…" : "Signing in…");
+    if (signupMode) {
+      const { data, error } = await sb.auth.signUp({ email, password });
+      $("#si-submit").disabled = false;
+      if (error) setMsg(msg, /not allowed|disabled/i.test(error.message) ? "New accounts are switched off right now. Ask the owner to turn them on." : error.message, "err");
+      else if (!data.session) setMsg(msg, "Your account needs email confirmation, which this site doesn't use. Ask the owner to turn off Confirm email in Supabase.", "err");
+      else setMsg(msg, "");
+      return;
+    }
     const { error } = await sb.auth.signInWithPassword({ email, password });
     $("#si-submit").disabled = false;
     if (error) setMsg(msg, error.message === "Invalid login credentials" ? "That email and password don't match." : error.message, "err");
     else setMsg(msg, "");
+  }
+  function toggleSignup() {
+    signupMode = !signupMode;
+    $("#si-eyebrow").textContent = signupMode ? "Create a view-only account" : "Application tracker";
+    $("#si-submit").textContent = signupMode ? "Create account" : "Sign in";
+    $("#si-password").setAttribute("autocomplete", signupMode ? "new-password" : "current-password");
+    $("#si-forgot").hidden = signupMode;
+    $("#si-mode").textContent = signupMode ? "Already have an account? Sign in" : "New here? Create a view-only account";
+    setMsg($("#si-msg"), signupMode ? `View-only accounts can see the tracker once ${C.ownerName || "the owner"} approves them.` : "");
   }
   async function forgotPassword() {
     const email = $("#si-email").value.trim();
@@ -665,13 +891,90 @@
     if (error) { setMsg(msg, error.message, "err"); return; }
     setMsg(msg, "");
     recovering = false;
-    showView("appView");
     toast("Password updated");
-    if (!loaded) loadData();
+    entered = true;
+    enterApp();
   }
   async function signOut() {
-    await sb.auth.signOut();
+    await sb.auth.signOut({ scope: "local" });   // this device only
     toast("Signed out");
+  }
+
+  // ---------- roles: owner, viewer, pending ----------
+  // The database rules (supabase/viewers.sql) do the real protection; this only decides what the screen shows.
+  async function resolveRole() {
+    const uid = session.user.id;
+    const own = await sb.from("app_owner").select("user_id").maybeSingle();
+    if (own.error) {
+      // viewers.sql not run yet: behave like the original single-user tracker.
+      console.warn("View-only access not set up yet", own.error.message);
+      return "owner";
+    }
+    if (!own.data || own.data.user_id === uid) return "owner";
+    const mine = await sb.from("viewers").select("approved").eq("user_id", uid).maybeSingle();
+    if (mine.error) throw mine.error;
+    if (mine.data && mine.data.approved) return "viewer";
+    if (!mine.data) await sb.from("viewers").insert({ email: session.user.email });   // ask the owner for access
+    return "pending";
+  }
+  async function enterApp() {
+    try { userRole = await resolveRole(); }
+    catch (err) { console.error(err); userRole = "pending"; }
+    document.body.classList.toggle("ro", userRole !== "owner");
+    if (userRole === "pending") {
+      $("#pd-email").textContent = session.user.email;
+      showView("pendingView");
+      return;
+    }
+    showView("appView");
+    renderAll();
+    loadData();
+  }
+  async function loadViewers() {
+    const { data, error } = await sb.from("viewers").select("*").order("created_at", { ascending: false });
+    viewers = error ? null : data;
+    renderViewers();
+  }
+  function renderViewers() {
+    const tb = $("#viewerRows");
+    tb.replaceChildren();
+    if (viewers === null) { tb.append(h("tr", null, h("td", { colspan: 4, class: "empty" }, "View-only access isn't switched on yet. Run supabase/viewers.sql in Supabase first."))); return; }
+    if (!viewers.length) { tb.append(h("tr", null, h("td", { colspan: 4, class: "empty" }, "No requests yet. Send friends your site link and ask them to tap Create a view-only account."))); return; }
+    for (const v of viewers) {
+      const asked = new Date(v.created_at);
+      const remove = h("button", { class: "btn small danger", type: "button" }, "Remove");
+      remove.addEventListener("click", async () => {
+        if (!remove.classList.contains("armed")) { remove.classList.add("armed"); remove.textContent = "Tap again"; return; }
+        const { error } = await sb.from("viewers").delete().eq("user_id", v.user_id);
+        toast(error ? "That didn't work. Try again." : `${v.email} removed`);
+        loadViewers();
+      });
+      const approve = v.approved ? null : h("button", { class: "btn small primary", type: "button" }, "Approve");
+      if (approve) approve.addEventListener("click", async () => {
+        approve.disabled = true;
+        const { error } = await sb.from("viewers").update({ approved: true }).eq("user_id", v.user_id);
+        toast(error ? "That didn't work. Try again." : `${v.email} can now view your tracker`);
+        loadViewers();
+      });
+      tb.append(h("tr", null,
+        h("td", null, v.email),
+        h("td", { class: "date" }, isNaN(asked) ? "—" : fmt(asked)),
+        h("td", null, h("span", { class: "chip " + (v.approved ? "s-accepted" : "k-check nodot") }, v.approved ? "Can view" : "Waiting")),
+        h("td", null, h("div", { class: "data-actions" }, approve, remove))));
+    }
+  }
+  async function changePassword() {
+    const input = $("#newPassword");
+    const password = input.value;
+    if (password.length < 8) { toast("Use at least 8 characters."); input.focus(); return; }
+    const btn = $("#changePw");
+    btn.disabled = true;
+    const { error } = await sb.auth.updateUser({ password });
+    if (error) { btn.disabled = false; toast(error.message); return; }
+    input.value = "";
+    const out = await sb.auth.signOut({ scope: "others" });   // sign out every other device
+    btn.disabled = false;
+    toast(out.error ? "Password changed." : "Password changed. Every other device is now signed out.");
   }
 
   // ---------- start-up ----------
@@ -704,6 +1007,17 @@
     $("#signinForm").addEventListener("submit", signIn);
     $("#si-forgot").addEventListener("click", forgotPassword);
     $("#recoverForm").addEventListener("submit", setNewPassword);
+    $("#si-mode").addEventListener("click", toggleSignup);
+    $("#pd-check").addEventListener("click", () => { $("#pd-check").disabled = true; enterApp().finally(() => { $("#pd-check").disabled = false; }); });
+    $("#pd-signout").addEventListener("click", signOut);
+    $("#viewersRefresh").addEventListener("click", loadViewers);
+    $("#changePw").addEventListener("click", changePassword);
+    const savedForm = readStore("jobAgentForm", null);
+    $("#ag-terms").value = savedForm && savedForm.terms ? savedForm.terms : AGENT.terms.join("\n");
+    $("#ag-location").value = savedForm && savedForm.location != null ? savedForm.location : AGENT.location;
+    $("#ag-miles").value = String(savedForm && savedForm.miles != null ? savedForm.miles : AGENT.miles);
+    $("#agentForm").addEventListener("submit", runAgent);
+    renderAgentResults();
     let tgtTimer;
     $("#target").addEventListener("input", () => {
       const n = Math.round(+$("#target").value);
@@ -716,7 +1030,7 @@
     if (window.ResizeObserver) new ResizeObserver(() => { clearTimeout(rsTimer); rsTimer = setTimeout(renderWeekChart, 80); }).observe($("#weekChart"));
     // Pick up changes made on another device when you come back to this tab.
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && session && Date.now() - lastLoad > 30000) loadData();
+      if (document.visibilityState === "visible" && session && (userRole === "owner" || userRole === "viewer") && Date.now() - lastLoad > 30000) loadData();
     });
   }
 
@@ -729,19 +1043,18 @@
     sb.auth.onAuthStateChange((event, s) => {
       session = s;
       if (event === "PASSWORD_RECOVERY") { recovering = true; showView("recoverView"); return; }
-      if (!s) { recovering = false; apps = []; loaded = false; showView("signinView"); return; }
+      if (!s) { recovering = false; entered = false; userRole = null; apps = []; loaded = false; document.body.classList.remove("ro"); showView("signinView"); return; }
       if (recovering) return;
-      showView("appView");
-      // Load outside the auth callback, as Supabase recommends.
-      if (!loaded && (event === "INITIAL_SESSION" || event === "SIGNED_IN")) setTimeout(loadData, 0);
-      else renderAll();
+      // Route outside the auth callback, as Supabase recommends.
+      if (!entered && (event === "INITIAL_SESSION" || event === "SIGNED_IN")) { entered = true; setTimeout(enterApp, 0); }
+      else if (userRole && userRole !== "pending") renderAll();
     });
   }
 
   if ("serviceWorker" in navigator && location.protocol === "https:") {
     window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(err => console.warn("Offline mode unavailable", err)));
   }
-    // ---------- light / dark switch ----------
+  // ---------- light / dark switch ----------
   // Remembers your choice on this device. With nothing saved, the app follows the device setting.
   const themeBtn = document.getElementById("themeBtn");
   const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
@@ -759,5 +1072,6 @@
   });
   systemDark.addEventListener("change", () => applyTheme(savedTheme()));
   applyTheme(savedTheme());
+
   start();
 })();

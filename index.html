@@ -35,7 +35,7 @@
 <!-- Sign in -->
 <main class="gate" id="signinView" hidden>
   <div class="card">
-    <p class="eyebrow">Application tracker</p>
+    <p class="eyebrow" id="si-eyebrow">Application tracker</p>
     <h1 class="js-title">Job Hunt</h1>
     <form id="signinForm" novalidate>
       <label>Email<input class="field" type="email" id="si-email" autocomplete="username" required></label>
@@ -44,6 +44,7 @@
     </form>
     <button class="linkbtn" type="button" id="si-forgot">Forgot your password?</button>
     <p class="msg" id="si-msg" hidden></p>
+    <button class="linkbtn" type="button" id="si-mode">New here? Create a view-only account</button>
   </div>
 </main>
 
@@ -57,6 +58,18 @@
       <button class="btn primary" type="submit">Save password</button>
     </form>
     <p class="msg" id="rc-msg" hidden></p>
+  </div>
+</main>
+
+<!-- Signed up, waiting for the owner to approve -->
+<main class="gate" id="pendingView" hidden>
+  <div class="card">
+    <p class="eyebrow">View-only account</p>
+    <h1>Waiting for approval</h1>
+    <p>Your account <b id="pd-email"></b> is ready. <span class="js-owner">The owner</span> needs to approve it before you can see the tracker.</p>
+    <p class="muted small">Send them a quick message to say you've signed up, then tap Check again.</p>
+    <button class="btn primary" type="button" id="pd-check">Check again</button>
+    <button class="linkbtn" type="button" id="pd-signout">Sign out</button>
   </div>
 </main>
 
@@ -82,16 +95,18 @@
   <nav class="jump" aria-label="Sections">
     <a href="#overview">Overview</a>
     <a href="#applications">Applications</a>
+    <a href="#agent" class="write-only">Job agent</a>
     <a href="#feedback">Feedback</a>
     <a href="#tracks">Career tracks</a>
     <a href="#plan">Plan</a>
     <a href="#data">Your data</a>
     <span class="spacer"></span>
-        <button class="btn" id="themeBtn" type="button">Dark mode</button>
-    <button class="btn primary" id="addTop" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>Add application</button>
+    <button class="btn" id="themeBtn" type="button">Dark mode</button>
+    <button class="btn primary write-only" id="addTop" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>Add application</button>
   </nav>
 
   <div class="banner" id="storeBanner" hidden></div>
+  <div class="banner" id="roleBanner" hidden></div>
 
   <section id="overview" aria-labelledby="ov-h">
     <div class="sec-head"><div class="t"><p class="eyebrow">Overview</p><h2 id="ov-h">Where things stand</h2></div></div>
@@ -117,7 +132,7 @@
   <section id="applications" aria-labelledby="ap-h">
     <div class="sec-head">
       <div class="t"><p class="eyebrow">Applications</p><h2 id="ap-h">Every job you go for</h2></div>
-      <button class="btn primary" id="addMain" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>Add application</button>
+      <button class="btn primary write-only" id="addMain" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>Add application</button>
     </div>
     <div class="toolbar">
       <input type="search" id="q" placeholder="Search company, role or reference" aria-label="Search applications">
@@ -142,6 +157,27 @@
         <tbody id="rows"><tr><td colspan="6" class="empty">Loading your applications…</td></tr></tbody>
       </table>
     </div>
+  </section>
+
+  <section id="agent" class="write-only" aria-labelledby="ag-h">
+    <div class="sec-head">
+      <div class="t"><p class="eyebrow">Job agent</p><h2 id="ag-h">Find jobs that fit you</h2><p class="muted">Searches Reed.co.uk for your target roles, scores each job against your skills, and flags anything that could rule you out.</p></div>
+    </div>
+    <div class="panel">
+      <form class="form" id="agentForm" novalidate>
+        <label class="full">Job titles to search<textarea class="field" id="ag-terms" rows="4" aria-describedby="ag-terms-hint"></textarea><span class="hint" id="ag-terms-hint">One per line, up to 8.</span></label>
+        <label>Location<input class="field" id="ag-location" placeholder="Hull"></label>
+        <label>Distance<select class="field" id="ag-miles">
+          <option value="10">Within 10 miles</option>
+          <option value="25">Within 25 miles</option>
+          <option value="50">Within 50 miles</option>
+          <option value="0">Anywhere in the UK</option>
+        </select></label>
+        <div class="full data-actions"><button class="btn primary" type="submit" id="ag-go">Find jobs</button><span class="count" id="ag-status"></span></div>
+      </form>
+    </div>
+    <div id="ag-results"></div>
+    <p class="caption">Jobs from <a href="https://www.reed.co.uk" target="_blank" rel="noopener">Reed.co.uk</a>. Scores use the job title and summary only, so always read the full advert before you apply.</p>
   </section>
 
   <section id="feedback" aria-labelledby="fb-h">
@@ -206,15 +242,34 @@
 
   <section id="data" aria-labelledby="dt-h">
     <div class="sec-head"><div class="t"><p class="eyebrow">Your data</p><h2 id="dt-h">Backup and account</h2></div></div>
+    <div class="panel write-only" id="viewersPanel">
+      <div class="sec-head">
+        <div class="t"><h3>View-only access</h3><p class="caption">Friends create a view-only account from your sign-in page. Approve only people you know. They can see everything here but can't change anything.</p></div>
+        <button class="btn small" id="viewersRefresh" type="button">Refresh</button>
+      </div>
+      <div class="tablebox">
+        <table style="min-width:520px">
+          <thead><tr><th>Email</th><th>Asked</th><th>Status</th><th></th></tr></thead>
+          <tbody id="viewerRows"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
     <div class="panel">
-      <p class="small muted">Your applications are stored in your own Supabase database. Download a backup now and then, and use Import to load a backup or a file from another tracker.</p>
+      <p class="small muted write-only">Your applications are stored in your own Supabase database. Download a backup now and then, and use Import to load a backup or a file from another tracker.</p>
       <div class="data-actions">
-        <button class="btn" id="exportBtn" type="button">Download backup</button>
-        <button class="btn" id="importBtn" type="button">Import applications</button>
+        <button class="btn write-only" id="exportBtn" type="button">Download backup</button>
+        <button class="btn write-only" id="importBtn" type="button">Import applications</button>
         <input type="file" id="importFile" accept="application/json,.json" hidden>
         <span class="spacer"></span>
         <span class="who" id="whoLbl"></span>
         <button class="btn small" id="signOut" type="button">Sign out</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div><h3>Change password</h3><p class="caption">Changing it also signs this account out on every other device.</p></div>
+      <div class="data-actions">
+        <input class="field" type="password" id="newPassword" autocomplete="new-password" placeholder="New password (8+ characters)" aria-label="New password">
+        <button class="btn" id="changePw" type="button">Change password</button>
       </div>
     </div>
   </section>
@@ -249,11 +304,11 @@
       <datalist id="sources"><option value="Handshake"><option value="LinkedIn"><option value="Indeed"><option value="Company website"><option value="Gradcracker"><option value="NHS Jobs"><option value="Referral"><option value="Recruiter"></datalist>
     </form>
     <div class="sheet-foot">
-      <button class="btn danger" type="button" id="edDelete" hidden>Delete</button>
+      <button class="btn danger write-only" type="button" id="edDelete" hidden>Delete</button>
       <span></span>
       <div class="right">
         <button class="btn" type="button" id="edCancel">Cancel</button>
-        <button class="btn primary" type="button" id="edSave">Save</button>
+        <button class="btn primary write-only" type="button" id="edSave">Save</button>
       </div>
     </div>
   </div>
