@@ -30,7 +30,8 @@
 
   // Job agent settings. content.js can override any of these with an "agent" entry.
   const AGENT = Object.assign({
-    terms: ["Junior Data Analyst", "Graduate Data Analyst", "IT Support Analyst", "Service Desk Analyst", "CRM Analyst", "Junior Business Analyst"],
+    terms: ["Junior Data Analyst", "Graduate Data Analyst", "IT Support Analyst", "Service Desk Analyst", "CRM Analyst", "Junior Business Analyst",
+      "Web Developer", "Website Manager", "WordPress Developer"],
     location: "Hull",
     miles: 25,
     // Skills and words that make a job a better fit, with how much each one counts.
@@ -38,7 +39,9 @@
       "python": 3, "sql": 3, "pandas": 2, "scikit": 2, "tensorflow": 2, "machine learning": 3, "nlp": 2, "natural language": 2,
       "data analys": 3, "data scien": 3, "power bi": 1, "tableau": 1, "excel": 1, "statistic": 1, "forecast": 1, "dashboard": 1, "reporting": 1,
       "it support": 3, "service desk": 3, "helpdesk": 2, "help desk": 2, "1st line": 2, "first line": 2, "2nd line": 1, "second line": 1,
-      "microsoft 365": 1, "office 365": 1, "wordpress": 2, "salesforce": 2, "crm": 2, "business analys": 3,
+      "microsoft 365": 1, "office 365": 1, "wordpress": 3, "salesforce": 2, "crm": 2, "business analys": 3,
+      "web develop": 3, "website": 2, "web content": 2, "html": 2, "css": 2, "javascript": 2, "front end": 2, "front-end": 2, "frontend": 2,
+      "cms": 2, "content management": 1, "seo": 1, "google analytics": 1, "shopify": 1, "php": 1,
       "graduate": 2, "junior": 2, "entry level": 2, "trainee": 1
     }
   }, C.agent || {});
@@ -606,7 +609,9 @@
   const SKILL_LABELS = { "data analys": "data analysis", "data scien": "data science", "business analys": "business analysis",
     "scikit": "scikit-learn", "statistic": "statistics", "forecast": "forecasting", "sql": "SQL", "python": "Python", "nlp": "NLP",
     "crm": "CRM", "power bi": "Power BI", "it support": "IT support", "microsoft 365": "Microsoft 365", "office 365": "Office 365",
-    "wordpress": "WordPress", "salesforce": "Salesforce", "tensorflow": "TensorFlow", "excel": "Excel", "tableau": "Tableau" };
+    "wordpress": "WordPress", "salesforce": "Salesforce", "tensorflow": "TensorFlow", "excel": "Excel", "tableau": "Tableau",
+    "web develop": "web development", "html": "HTML", "css": "CSS", "javascript": "JavaScript", "cms": "CMS", "seo": "SEO", "php": "PHP",
+    "front-end": "front end", "frontend": "front end", "google analytics": "Google Analytics", "shopify": "Shopify" };
 
   function scoreJob(j) {
     const title = (j.title || "").toLowerCase();
@@ -619,7 +624,6 @@
     let score = Math.min(100, raw / 16 * 100);
     const flags = [], good = [];
     if (/\b(senior|sr\.?|lead|principal|head of|director)\b/i.test(j.title || "")) { flags.push("Senior role"); score *= 0.5; }
-    else if (/\bmanager\b/i.test(j.title || "")) { flags.push("Manager role"); score *= 0.7; }
     const years = [...text.matchAll(/(\d{1,2})\s*\+?\s*(?:years|yrs)/g)].map(m => +m[1]).filter(n => n >= 3 && n <= 20);
     if (years.length) { flags.push(`Asks for ${Math.max(...years)}+ years`); score *= 0.7; }
     if (/security clearance|\b(sc|dv)\b (cleared|clearance)/i.test(text)) { flags.push("Security clearance"); score *= 0.8; }
@@ -633,6 +637,7 @@
   function guessTrack(j) {
     const t = ((j.title || "") + " " + (j.summary || "")).toLowerCase();
     if (/graduate (scheme|programme|program)/.test(t)) return "grad";
+    if (/web develop|website|wordpress|front[- ]?end|web content|\bcms\b/.test(t)) return "it";
     if (/it support|service desk|help ?desk|technician|1st line|2nd line|first line|second line/.test(t)) return "it";
     if (/business analys|\bcrm\b|salesforce/.test(t)) return "ba";
     if (/\bdata\b|analyst|insight|reporting|machine learning|scien/.test(t)) return "data";
@@ -648,7 +653,7 @@
   }
   function inTracker(j) {
     const co = (j.employer || "").toLowerCase(), ro = (j.title || "").toLowerCase();
-    return apps.some(a => (j.url && a.url === j.url) || a.ref === "Reed " + j.id ||
+    return apps.some(a => (j.url && a.url === j.url) || a.ref === j.id || a.ref === "Reed " + j.id ||
       ((a.company || "").toLowerCase() === co && (a.role || "").toLowerCase() === ro));
   }
   async function addJobToTracker(j, btn) {
@@ -661,8 +666,8 @@
     try {
       await saveApplication({
         company: j.employer || "Unknown employer", role: j.title, track, location: j.location, status: "saved", furthest: 0,
-        dateApplied: "", closingDate: j.closes || "", source: "Reed (job agent)", cv: tk && CVS.includes(tk.cv) ? tk.cv : "",
-        ref: "Reed " + j.id, salary: salaryText(j), url: j.url, nextAction: "Apply", nextActionDate: iso(next),
+        dateApplied: "", closingDate: j.closes || "", source: (j.source || "Reed") + " (job agent)", cv: tk && CVS.includes(tk.cv) ? tk.cv : "",
+        ref: j.id, salary: salaryText(j), url: j.url, nextAction: "Apply", nextActionDate: iso(next),
         feedback: "", notes: (j.summary || "").slice(0, 400), needsUpdate: false, checkNote: ""
       }, null);
       toast("Added to your tracker as To apply");
@@ -688,11 +693,12 @@
     });
     const posted = parseD(j.posted), closes = parseD(j.closes);
     const summary = (j.summary || "").length > 220 ? j.summary.slice(0, 217).trimEnd() + "…" : (j.summary || "");
-    const link = /^https:\/\//.test(j.url || "") ? j.url : "https://www.reed.co.uk";
+    const link = /^https:\/\//.test(j.url || "") ? j.url : (j.source === "Adzuna" ? "https://www.adzuna.co.uk" : "https://www.reed.co.uk");
     return h("article", { class: "track" + (j.score >= 70 ? " best" : "") },
       h("div", { class: "meta" },
         h("span", { class: "chip nodot " + (j.score >= 70 ? "s-offer" : j.score >= 45 ? "s-applied" : "") }, `${label} · ${j.score}%`),
-        posted ? h("span", { class: "chip nodot" }, "Posted " + fmt(posted)) : null),
+        posted ? h("span", { class: "chip nodot" }, "Posted " + fmt(posted)) : null,
+        h("span", { class: "chip nodot" }, (j.source || "Reed") + (j.alsoOn && j.alsoOn.length ? " · also on " + j.alsoOn.join(", ") : ""))),
       h("h3", null, j.title || "Untitled job"),
       h("p", { class: "small muted" }, [j.employer, j.location].filter(Boolean).join(" · ")),
       h("div", { class: "bar-track", role: "img", "aria-label": `${j.score}% match` }, fill),
@@ -703,7 +709,7 @@
         j.hits.map(x => h("span", { class: "chip nodot" }, x))) : null,
       summary ? h("p", { class: "small muted" }, summary) : null,
       h("div", { class: "data-actions" },
-        h("a", { class: "btn small", href: link, target: "_blank", rel: "noopener", style: "text-decoration:none" }, "View on Reed"),
+        h("a", { class: "btn small", href: link, target: "_blank", rel: "noopener", style: "text-decoration:none" }, "View on " + (j.source || "Reed")),
         addBtn, hideBtn));
   }
   function renderAgentResults() {
@@ -734,7 +740,7 @@
   }
   async function runAgent(e) {
     e.preventDefault();
-    const terms = $("#ag-terms").value.split("\n").map(s => s.trim()).filter(Boolean).slice(0, 8);
+    const terms = $("#ag-terms").value.split("\n").map(s => s.trim()).filter(Boolean).slice(0, 10);
     const miles = +$("#ag-miles").value;
     const location = miles ? $("#ag-location").value.trim() : "";
     const status = $("#ag-status");
@@ -743,7 +749,7 @@
     writeStore("jobAgentForm", { terms: terms.join("\n"), location: $("#ag-location").value.trim(), miles });
     const btn = $("#ag-go");
     btn.disabled = true;
-    status.textContent = `Searching Reed for ${terms.length} job ${terms.length === 1 ? "title" : "titles"}…`;
+    status.textContent = `Searching for ${terms.length} job ${terms.length === 1 ? "title" : "titles"}…`;
     try {
       const { data, error } = await sb.functions.invoke("find-jobs", { body: { terms, location, miles } });
       if (error) {
@@ -759,7 +765,9 @@
       agentShown = 24;
       agentSearched = true;
       const strong = agentJobs.filter(j => j.score >= 70).length;
-      status.textContent = `Found ${agentJobs.length} jobs, ${strong} strong ${strong === 1 ? "match" : "matches"}.` + (data.problems && data.problems.length ? " " + data.problems[0] : "");
+      const c = data.counts || {};
+      const split = [c.Reed ? `${c.Reed} from Reed` : "", c.Adzuna ? `${c.Adzuna} from Adzuna` : ""].filter(Boolean).join(", ");
+      status.textContent = `Found ${agentJobs.length} jobs${split ? " (" + split + ")" : ""}, ${strong} strong ${strong === 1 ? "match" : "matches"}.` + (data.problems && data.problems.length ? " " + data.problems[0] : "");
       renderAgentResults();
     } catch (err) {
       console.error(err);
