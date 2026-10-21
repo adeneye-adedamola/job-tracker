@@ -1,0 +1,49 @@
+/* Extra styles added after the first version: the private board and the lock button.
+   Uses the colour tokens from styles.css, so light and dark mode both work. */
+.lock-btn{padding:8px 10px}
+#pvOpen{text-decoration:none}
+
+/* private board */
+.pv-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+#pvBody{display:grid;gap:20px}
+.pv-head{gap:16px}
+.pv-title{width:100%;font-family:var(--font-display);font-weight:800;font-size:clamp(24px,3.4vw,34px);letter-spacing:-.015em;line-height:1.15;padding:6px 10px;color:var(--ink)}
+.pv-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.pv-stats div{display:grid;gap:2px;background:var(--soft);border-radius:10px;padding:10px 12px;min-width:0}
+.pv-stats b{font-size:15px;overflow-wrap:anywhere}
+.pv-link{flex:1 1 260px;min-width:0}
+#privateView h2{font-size:20px}
+.pv-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.pv-step,.pv-check{display:grid;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.pv-step .field,.pv-check .field{width:100%;min-width:0;color:var(--ink)}
+.pv-acts{display:flex;gap:6px;justify-content:flex-end}
+.pv-acts .btn{min-width:34px}
+
+.pv-step{grid-template-columns:26px 140px minmax(0,1.6fr) 150px minmax(0,1fr) auto;grid-template-areas:"num status name date note acts";border-left:4px solid var(--line)}
+.pv-step .pv-num{grid-area:num;font-family:var(--font-mono);font-size:12px;color:var(--muted);text-align:center}
+.pv-step select{grid-area:status}
+.pv-step .pv-name{grid-area:name}
+.pv-step input[type="date"]{grid-area:date}
+.pv-step .pv-note{grid-area:note}
+.pv-step .pv-acts{grid-area:acts}
+.pv-step.pv-doing{border-left-color:var(--blue)}
+.pv-step.pv-waiting{border-left-color:var(--warn)}
+.pv-step.pv-done{border-left-color:var(--good);background:var(--good-soft)}
+
+.pv-check{grid-template-columns:22px minmax(0,1.6fr) minmax(0,1fr) auto;grid-template-areas:"box name link acts"}
+.pv-check input[type="checkbox"]{grid-area:box;width:18px;height:18px;accent-color:var(--good)}
+.pv-check .pv-name{grid-area:name}
+.pv-check .pv-note{grid-area:link}
+.pv-check .pv-acts{grid-area:acts}
+.pv-check.done{background:var(--good-soft)}
+
+.pv-notes{width:100%;min-height:140px;resize:vertical;color:var(--ink);font:inherit}
+
+@media (max-width: 860px){
+  .pv-step{grid-template-columns:26px minmax(0,1fr) auto;grid-template-areas:"num status acts" "name name name" "date note note"}
+  .pv-check{grid-template-columns:22px minmax(0,1fr) auto;grid-template-areas:"box name name" "link link acts"}
+}
+@media (max-width: 520px){
+  .pv-stats{grid-template-columns:1fr}
+  .pv-step{grid-template-areas:"num status acts" "name name name" "date date date" "note note note"}
+}

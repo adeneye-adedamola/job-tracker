@@ -15,6 +15,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="extras.css">
 </head>
 <body>
 
@@ -102,6 +103,7 @@
     <a href="#data">Your data</a>
     <span class="spacer"></span>
     <button class="btn" id="themeBtn" type="button">Dark mode</button>
+    <button class="btn write-only lock-btn" id="privateBtn" type="button" aria-label="Private board" title="Private board" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
     <button class="btn primary write-only" id="addTop" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>Add application</button>
   </nav>
 
@@ -173,11 +175,16 @@
           <option value="50">Within 50 miles</option>
           <option value="0">Anywhere in the UK</option>
         </select></label>
+        <label>Sponsorship<select class="field" id="ag-sponsor">
+          <option value="all">All jobs</option>
+          <option value="can">Only jobs that can sponsor</option>
+          <option value="hide-no">Hide jobs that say no sponsorship</option>
+        </select></label>
         <div class="full data-actions"><button class="btn primary" type="submit" id="ag-go">Find jobs</button><span class="count" id="ag-status"></span></div>
       </form>
     </div>
     <div id="ag-results"></div>
-    <p class="caption">Jobs from <a href="https://www.reed.co.uk" target="_blank" rel="noopener">Reed.co.uk</a> and <a href="https://www.adzuna.co.uk" target="_blank" rel="noopener">Jobs by Adzuna</a>. Scores use the job title and summary only, so always read the full advert before you apply.</p>
+    <p class="caption">Jobs from <a href="https://www.reed.co.uk" target="_blank" rel="noopener">Reed.co.uk</a> and <a href="https://www.adzuna.co.uk" target="_blank" rel="noopener">Jobs by Adzuna</a>. Scores use the job title and summary only, so always read the full advert before you apply. Sponsorship labels come from the advert text and the UK register of licensed sponsors, so confirm with the employer before relying on them.</p>
   </section>
 
   <section id="feedback" aria-labelledby="fb-h">
@@ -254,6 +261,14 @@
         </table>
       </div>
     </div>
+    <div class="panel write-only" id="sponsorPanel">
+      <div><h3>Sponsor list</h3><p class="caption">The job agent labels employers that are on the UK government's register of licensed sponsors. Update it about once a month: download the latest Worker and Temporary Worker CSV from <a href="https://www.gov.uk/government/publications/register-of-licensed-sponsors-workers" target="_blank" rel="noopener">GOV.UK</a>, then choose it here.</p></div>
+      <div class="data-actions">
+        <button class="btn" id="sponsorBtn" type="button">Update sponsor list</button>
+        <input type="file" id="sponsorFile" accept=".csv,text/csv" hidden>
+        <span class="count" id="sponsorStatus"></span>
+      </div>
+    </div>
     <div class="panel">
       <p class="small muted write-only">Your applications are stored in your own Supabase database. Download a backup now and then, and use Import to load a backup or a file from another tracker.</p>
       <div class="data-actions">
@@ -273,6 +288,48 @@
       </div>
     </div>
   </section>
+</div>
+</div>
+
+<!-- Private board: only the owner gets the button, and the database only lets the owner read its contents. -->
+<div id="privateView" hidden>
+<div class="wrap pv">
+  <div class="pv-bar">
+    <button class="btn" id="pvBack" type="button">Back to tracker</button>
+    <span class="count" id="pvSaved" aria-live="polite"></span>
+  </div>
+  <div class="panel" id="pvSetup" hidden>
+    <p id="pvSetupMsg"></p>
+    <div class="data-actions"><button class="btn" id="pvRetry" type="button">Try again</button></div>
+  </div>
+  <div id="pvBody" hidden>
+    <header class="panel pv-head">
+      <p class="eyebrow">Private: only you can see this page</p>
+      <input class="field pv-title" id="pvTitle" aria-label="Page title" placeholder="Title">
+      <div class="pv-stats">
+        <div><span class="caption">Steps done</span><b id="pvStepsDone">0 of 0</b></div>
+        <div><span class="caption">Checklist ready</span><b id="pvChecksDone">0 of 0</b></div>
+        <div><span class="caption">Next date</span><b id="pvNext">No date set</b></div>
+      </div>
+      <div class="bar-track" role="presentation"><div class="bar-fill" id="pvBar"></div></div>
+      <div class="data-actions">
+        <a class="btn primary" id="pvOpen" target="_blank" rel="noopener" hidden>Open link</a>
+        <input class="field pv-link" id="pvLink" aria-label="Link" placeholder="Link (https://…)">
+      </div>
+    </header>
+    <section class="panel" aria-labelledby="pvStepsH">
+      <div class="sec-head"><div class="t"><h2 id="pvStepsH">Steps</h2></div><button class="btn small" id="pvAddStep" type="button">Add step</button></div>
+      <ol class="pv-list" id="pvSteps"></ol>
+    </section>
+    <section class="panel" aria-labelledby="pvChecksH">
+      <div class="sec-head"><div class="t"><h2 id="pvChecksH">Checklist</h2></div><button class="btn small" id="pvAddCheck" type="button">Add item</button></div>
+      <ul class="pv-list" id="pvChecks"></ul>
+    </section>
+    <section class="panel" aria-labelledby="pvNotesH">
+      <h2 id="pvNotesH">Notes</h2>
+      <textarea class="field pv-notes" id="pvNotes" rows="6" aria-label="Notes"></textarea>
+    </section>
+  </div>
 </div>
 </div>
 

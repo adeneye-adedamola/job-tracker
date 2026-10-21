@@ -606,6 +606,19 @@
   function readStore(key, fallback) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; } }
   function writeStore(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private browsing */ } }
   const hiddenJobs = () => new Set(readStore("jobAgentHidden", []));
+  let agentSponsorList = true;   // false when the sponsor list hasn't been loaded yet
+
+  // Sponsorship label for a job: what the advert says first, then the register of licensed sponsors.
+  function sponsorInfo(j) {
+    const s = j.sponsor || {};
+    if (s.advert === "no") return { key: "no", text: "No sponsorship", cls: "k-overdue" };
+    if (s.advert === "yes") return { key: "yes", text: s.licensed ? "Sponsorship offered (licensed)" : "Sponsorship offered", cls: "s-offer" };
+    if (s.licensed) return { key: "licensed", text: "Licensed sponsor", cls: "s-applied" };
+    if (s.advert === "rtw") return { key: "rtw", text: "Needs right to work", cls: "k-check" };
+    if (s.agency) return { key: "agency", text: "Agency: ask about sponsorship", cls: "" };
+    return { key: "unknown", text: "Sponsorship unknown", cls: "" };
+  }
+  const canSponsor = j => { const k = sponsorInfo(j).key; return k === "yes" || k === "licensed"; };
   const SKILL_LABELS = { "data analys": "data analysis", "data scien": "data science", "business analys": "business analysis",
     "scikit": "scikit-learn", "statistic": "statistics", "forecast": "forecasting", "sql": "SQL", "python": "Python", "nlp": "NLP",
     "crm": "CRM", "power bi": "Power BI", "it support": "IT support", "microsoft 365": "Microsoft 365", "office 365": "Office 365",
@@ -668,7 +681,7 @@
         company: j.employer || "Unknown employer", role: j.title, track, location: j.location, status: "saved", furthest: 0,
         dateApplied: "", closingDate: j.closes || "", source: (j.source || "Reed") + " (job agent)", cv: tk && CVS.includes(tk.cv) ? tk.cv : "",
         ref: j.id, salary: salaryText(j), url: j.url, nextAction: "Apply", nextActionDate: iso(next),
-        feedback: "", notes: (j.summary || "").slice(0, 400), needsUpdate: false, checkNote: ""
+        feedback: "", notes: ("Sponsorship: " + sponsorInfo(j).text + ". " + (j.summary || "")).slice(0, 450), needsUpdate: false, checkNote: ""
       }, null);
       toast("Added to your tracker as To apply");
       renderAgentResults();
@@ -698,6 +711,7 @@
       h("div", { class: "meta" },
         h("span", { class: "chip nodot " + (j.score >= 70 ? "s-offer" : j.score >= 45 ? "s-applied" : "") }, `${label} · ${j.score}%`),
         posted ? h("span", { class: "chip nodot" }, "Posted " + fmt(posted)) : null,
+        h("span", { class: "chip nodot " + sponsorInfo(j).cls, title: "Based on the advert text and the UK register of licensed sponsors. Always confirm with the employer." }, sponsorInfo(j).text),
         h("span", { class: "chip nodot" }, (j.source || "Reed") + (j.alsoOn && j.alsoOn.length ? " · also on " + j.alsoOn.join(", ") : ""))),
       h("h3", null, j.title || "Untitled job"),
       h("p", { class: "small muted" }, [j.employer, j.location].filter(Boolean).join(" · ")),
@@ -717,9 +731,12 @@
     box.replaceChildren();
     if (!agentSearched) { box.append(h("p", { class: "empty" }, "Your matches will appear here. Check the job titles above, then tap Find jobs.")); return; }
     const hid = hiddenJobs();
-    const list = agentJobs.filter(j => !hid.has(j.id));
-    const hiddenHere = agentJobs.length - list.length;
-    if (!list.length) box.append(h("p", { class: "empty" }, agentJobs.length ? "You've hidden every job from this search." : "No jobs found. Try wider distance or different job titles."));
+    const notHidden = agentJobs.filter(j => !hid.has(j.id));
+    const hiddenHere = agentJobs.length - notHidden.length;
+    const sf = $("#ag-sponsor").value;
+    const list = notHidden.filter(j => sf === "can" ? canSponsor(j) : sf === "hide-no" ? sponsorInfo(j).key !== "no" : true);
+    if (!agentSponsorList) box.append(h("p", { class: "small muted" }, "Sponsor labels only use the advert text right now. Load the sponsor list in Your data to check employers too."));
+    if (!list.length) box.append(h("p", { class: "empty" }, !agentJobs.length ? "No jobs found. Try wider distance or different job titles." : !notHidden.length ? "You've hidden every job from this search." : "No jobs match the sponsorship filter. Choose All jobs to see the rest."));
     else {
       const grid = h("div", { class: "tracks" });
       list.slice(0, agentShown).forEach(j => grid.append(jobCard(j)));
@@ -764,10 +781,12 @@
         .sort((a, b) => b.score - a.score || (b.posted || "").localeCompare(a.posted || ""));
       agentShown = 24;
       agentSearched = true;
+      agentSponsorList = !!data.sponsorList;
       const strong = agentJobs.filter(j => j.score >= 70).length;
+      const sponsorCount = agentJobs.filter(canSponsor).length;
       const c = data.counts || {};
       const split = [c.Reed ? `${c.Reed} from Reed` : "", c.Adzuna ? `${c.Adzuna} from Adzuna` : ""].filter(Boolean).join(", ");
-      status.textContent = `Found ${agentJobs.length} jobs${split ? " (" + split + ")" : ""}, ${strong} strong ${strong === 1 ? "match" : "matches"}.` + (data.problems && data.problems.length ? " " + data.problems[0] : "");
+      status.textContent = `Found ${agentJobs.length} jobs${split ? " (" + split + ")" : ""}, ${strong} strong ${strong === 1 ? "match" : "matches"}, ${sponsorCount} can sponsor.` + (data.problems && data.problems.length ? " " + data.problems[0] : "");
       renderAgentResults();
     } catch (err) {
       console.error(err);
@@ -775,6 +794,212 @@
     } finally {
       btn.disabled = false;
     }
+  }
+
+  // ---------- sponsor list (owner only) ----------
+  // Loads the UK register of licensed sponsors (a CSV from GOV.UK) into the sponsors table,
+  // so the job agent can label employers that can sponsor workers.
+  // Simplified organisation name. Must match normOrg() in the find-jobs function.
+  function normOrg(s) {
+    return String(s || "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ")
+      .replace(/\b(?:the|ltd|limited|plc|llp|llc|inc|uk|co|company|group|holdings)\b/g, " ").replace(/\s+/g, " ").trim();
+  }
+  function parseCsv(text) {
+    const rows = [];
+    let row = [], field = "", quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quoted) {
+        if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else quoted = false; }
+        else field += c;
+      } else if (c === '"') quoted = true;
+      else if (c === ",") { row.push(field); field = ""; }
+      else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+      else if (c !== "\r") field += c;
+    }
+    if (field || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  }
+  async function loadSponsorInfo() {
+    const st = $("#sponsorStatus");
+    if (!st || userRole !== "owner") return;
+    const head = await sb.from("sponsors").select("norm", { count: "exact", head: true });
+    if (head.error) { st.textContent = "Not set up yet. Run supabase/sponsors.sql in Supabase first."; return; }
+    if (!head.count) { st.textContent = "No sponsor list loaded yet."; return; }
+    const last = await sb.from("sponsors").select("batch").order("batch", { ascending: false }).limit(1);
+    const d = last.data && last.data[0] ? new Date(last.data[0].batch) : null;
+    st.textContent = `${head.count.toLocaleString("en-GB")} organisations loaded` + (d && !isNaN(d) ? `, updated ${fmt(d)} ${d.getFullYear()}` : "") + ".";
+  }
+  async function importSponsors(file) {
+    const st = $("#sponsorStatus"), btn = $("#sponsorBtn");
+    btn.disabled = true;
+    try {
+      st.textContent = "Reading the file…";
+      const rows = parseCsv((await file.text()).replace(/^﻿/, ""));
+      if (rows.length < 2) throw new Error("That file is empty.");
+      let col = rows[0].findIndex(c => /organi[sz]ation\s*name/i.test(c));
+      if (col < 0) col = 0;
+      const names = new Map();
+      for (const r of rows.slice(1)) {
+        const raw = (r[col] || "").trim();
+        if (!raw) continue;
+        for (const n of [raw, ...raw.split(/\s+(?:t\/a|trading as)\s+/i)]) {
+          const norm = normOrg(n);
+          if (norm.length >= 3 && !names.has(norm)) names.set(norm, n.slice(0, 200));
+        }
+      }
+      if (names.size < 1000) throw new Error("This doesn't look like the sponsor register. Download the Worker and Temporary Worker CSV from GOV.UK.");
+      const batch = new Date().toISOString();
+      const all = [...names].map(([norm, name]) => ({ norm, name, batch }));
+      const SIZE = 1000;
+      let done = 0;
+      for (let i = 0; i < all.length; i += SIZE * 4) {
+        const group = [];
+        for (let k = i; k < Math.min(all.length, i + SIZE * 4); k += SIZE) group.push(all.slice(k, k + SIZE));
+        const res = await Promise.all(group.map(chunk => sb.from("sponsors").upsert(chunk, { onConflict: "norm" })));
+        const bad = res.find(r => r.error);
+        if (bad) throw new Error(/relation|schema cache|does not exist/i.test(bad.error.message) ? "Run supabase/sponsors.sql in Supabase first." : bad.error.message);
+        done += group.reduce((n, c) => n + c.length, 0);
+        st.textContent = `Uploading ${done.toLocaleString("en-GB")} of ${all.length.toLocaleString("en-GB")}…`;
+      }
+      st.textContent = "Removing old entries…";
+      const del = await sb.from("sponsors").delete().neq("batch", batch);
+      if (del.error) throw new Error(del.error.message);
+      toast("Sponsor list updated");
+      await loadSponsorInfo();
+    } catch (err) {
+      console.error(err);
+      st.textContent = err && err.message ? err.message : "That didn't work. Try again.";
+    } finally {
+      btn.disabled = false;
+      $("#sponsorFile").value = "";
+    }
+  }
+
+  // ---------- private board (owner only) ----------
+  // A separate page only the owner can open. Its title, steps and checklist live in the
+  // private_board table, which the database lets only the owner read, so nothing about it
+  // is written in this public code.
+  const PV_STATUSES = [["todo", "Not started"], ["doing", "In progress"], ["waiting", "Waiting"], ["done", "Done"]];
+  let pvData = null, pvTimer = 0, pvDirty = false;
+  const pvBlank = () => ({ title: "Private board", link: "", steps: [], checklist: [], notes: "" });
+  const safeLink = u => /^https:\/\/\S+$/i.test(String(u || "").trim()) ? String(u).trim() : "";
+  function pvStatus(text) { $("#pvSaved").textContent = text; }
+  function pvChanged(rerender) {
+    pvDirty = true;
+    pvStatus("Saving soon…");
+    clearTimeout(pvTimer);
+    pvTimer = setTimeout(pvSave, 700);
+    if (rerender) renderPrivate(); else renderPvProgress();
+  }
+  async function pvSave() {
+    clearTimeout(pvTimer);
+    if (!pvData || !session || userRole !== "owner") return;
+    pvStatus("Saving…");
+    const { error } = await sb.from("private_board").upsert({ user_id: session.user.id, data: pvData, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+    if (error) { console.error(error); pvStatus("Not saved. Check your connection."); return; }
+    pvDirty = false;
+    pvStatus("Saved");
+  }
+  async function openPrivate() {
+    if (userRole !== "owner") return;
+    showView("privateView");
+    window.scrollTo(0, 0);
+    if (pvData) { renderPrivate(); return; }
+    $("#pvBody").hidden = true;
+    $("#pvSetup").hidden = true;
+    pvStatus("Loading…");
+    const { data, error } = await sb.from("private_board").select("data").maybeSingle();
+    if (error) {
+      console.error(error);
+      pvStatus("");
+      $("#pvSetup").hidden = false;
+      $("#pvSetupMsg").textContent = /relation|schema cache|does not exist/i.test(error.message) ? "This page isn't set up yet. Run your private setup file in Supabase first." : "Couldn't load this page. Check your connection and try again.";
+      return;
+    }
+    pvData = Object.assign(pvBlank(), data && data.data ? data.data : {});
+    if (!Array.isArray(pvData.steps)) pvData.steps = [];
+    if (!Array.isArray(pvData.checklist)) pvData.checklist = [];
+    pvStatus(data ? "Saved" : "");
+    $("#pvBody").hidden = false;
+    renderPrivate();
+  }
+  async function closePrivate() {
+    if (pvDirty) await pvSave();
+    showView("appView");
+  }
+  function renderPvProgress() {
+    if (!pvData) return;
+    const sd = pvData.steps.filter(x => x.status === "done").length;
+    const cd = pvData.checklist.filter(x => x.done).length;
+    const next = pvData.steps.filter(x => x.status !== "done" && parseD(x.date) && parseD(x.date) >= today())
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
+    $("#pvStepsDone").textContent = `${sd} of ${pvData.steps.length}`;
+    $("#pvChecksDone").textContent = `${cd} of ${pvData.checklist.length}`;
+    $("#pvNext").textContent = next ? `${fmt(parseD(next.date))}: ${next.name || "Untitled step"}` : "No date set";
+    const pct = pvData.steps.length ? Math.round(sd / pvData.steps.length * 100) : 0;
+    $("#pvBar").style.width = Math.max(2, pct) + "%";
+    const link = safeLink(pvData.link);
+    const open = $("#pvOpen");
+    open.hidden = !link;
+    if (link) open.href = link;
+  }
+  function pvButton(label, text, onClick, cls) {
+    const b = h("button", { class: "btn small" + (cls ? " " + cls : ""), type: "button", "aria-label": label, title: label }, text);
+    b.addEventListener("click", onClick);
+    return b;
+  }
+  function moveItem(list, i, d) {
+    const j = i + d;
+    if (j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    pvChanged(true);
+  }
+  function renderPrivate() {
+    if (!pvData) return;
+    $("#pvTitle").value = pvData.title || "";
+    $("#pvLink").value = pvData.link || "";
+    $("#pvNotes").value = pvData.notes || "";
+    const steps = $("#pvSteps");
+    steps.replaceChildren();
+    if (!pvData.steps.length) steps.append(h("li", { class: "empty" }, "No steps yet. Add your first one."));
+    pvData.steps.forEach((st, i) => {
+      const status = h("select", { class: "field", "aria-label": "Status" }, PV_STATUSES.map(([v, l]) => h("option", { value: v }, l)));
+      status.value = PV_STATUSES.some(([v]) => v === st.status) ? st.status : "todo";
+      status.addEventListener("change", () => { st.status = status.value; pvChanged(true); });
+      const name = h("input", { class: "field pv-name", "aria-label": "Step", placeholder: "Step", value: st.name || "" });
+      name.addEventListener("input", () => { st.name = name.value; pvChanged(false); });
+      const date = h("input", { class: "field", type: "date", "aria-label": "Date", value: st.date || "" });
+      date.addEventListener("change", () => { st.date = date.value; pvChanged(false); });
+      const note = h("input", { class: "field pv-note", "aria-label": "Note", placeholder: "Note", value: st.note || "" });
+      note.addEventListener("input", () => { st.note = note.value; pvChanged(false); });
+      steps.append(h("li", { class: "pv-step pv-" + status.value },
+        h("span", { class: "pv-num" }, String(i + 1)),
+        status, name, date, note,
+        h("span", { class: "pv-acts" },
+          pvButton("Move up", "↑", () => moveItem(pvData.steps, i, -1)),
+          pvButton("Move down", "↓", () => moveItem(pvData.steps, i, 1)),
+          pvButton("Delete step", "✕", () => { pvData.steps.splice(i, 1); pvChanged(true); }, "danger"))));
+    });
+    const checks = $("#pvChecks");
+    checks.replaceChildren();
+    if (!pvData.checklist.length) checks.append(h("li", { class: "empty" }, "Nothing on the checklist yet."));
+    pvData.checklist.forEach((it, i) => {
+      const box = h("input", { type: "checkbox", "aria-label": "Ready" });
+      box.checked = !!it.done;
+      box.addEventListener("change", () => { it.done = box.checked; pvChanged(true); });
+      const text = h("input", { class: "field pv-name", "aria-label": "Item", placeholder: "Item", value: it.text || "" });
+      text.addEventListener("input", () => { it.text = text.value; pvChanged(false); });
+      const link = h("input", { class: "field pv-note", "aria-label": "Link (optional)", placeholder: "Link to the file (optional)", value: it.link || "" });
+      link.addEventListener("change", () => { it.link = link.value.trim(); pvChanged(true); });
+      const url = safeLink(it.link);
+      checks.append(h("li", { class: "pv-check" + (it.done ? " done" : "") },
+        box, text, link,
+        h("span", { class: "pv-acts" },
+          url ? h("a", { class: "btn small", href: url, target: "_blank", rel: "noopener", style: "text-decoration:none" }, "Open") : null,
+          pvButton("Delete item", "✕", () => { pvData.checklist.splice(i, 1); pvChanged(true); }, "danger"))));
+    });
+    renderPvProgress();
   }
 
   // ---------- import, export and summary ----------
@@ -850,7 +1075,7 @@
 
   // ---------- sign-in ----------
   function showView(name) {
-    for (const v of ["setupView", "signinView", "recoverView", "pendingView", "appView"]) $("#" + v).hidden = v !== name;
+    for (const v of ["setupView", "signinView", "recoverView", "pendingView", "appView", "privateView"]) $("#" + v).hidden = v !== name;
   }
   function setMsg(el, text, kind) { el.textContent = text; el.className = "msg" + (kind ? " " + kind : ""); el.hidden = !text; }
   async function signIn(e) {
@@ -934,9 +1159,11 @@
       showView("pendingView");
       return;
     }
+    $("#privateBtn").hidden = userRole !== "owner";
     showView("appView");
     renderAll();
     loadData();
+    if (userRole === "owner") loadSponsorInfo();
   }
   async function loadViewers() {
     const { data, error } = await sb.from("viewers").select("*").order("created_at", { ascending: false });
@@ -1025,6 +1252,33 @@
     $("#ag-location").value = savedForm && savedForm.location != null ? savedForm.location : AGENT.location;
     $("#ag-miles").value = String(savedForm && savedForm.miles != null ? savedForm.miles : AGENT.miles);
     $("#agentForm").addEventListener("submit", runAgent);
+    $("#ag-sponsor").value = readStore("jobAgentSponsor", "all");
+    if (!$("#ag-sponsor").value) $("#ag-sponsor").value = "all";
+    $("#ag-sponsor").addEventListener("change", () => { writeStore("jobAgentSponsor", $("#ag-sponsor").value); agentShown = 24; renderAgentResults(); });
+    $("#sponsorBtn").addEventListener("click", () => $("#sponsorFile").click());
+    $("#sponsorFile").addEventListener("change", e => { const f = e.target.files && e.target.files[0]; if (f) importSponsors(f); });
+    // Private board
+    $("#privateBtn").addEventListener("click", openPrivate);
+    $("#pvBack").addEventListener("click", closePrivate);
+    $("#pvRetry").addEventListener("click", () => { pvData = null; openPrivate(); });
+    $("#pvTitle").addEventListener("input", () => { if (pvData) { pvData.title = $("#pvTitle").value; pvChanged(false); } });
+    $("#pvLink").addEventListener("change", () => { if (pvData) { pvData.link = $("#pvLink").value.trim(); pvChanged(false); } });
+    $("#pvNotes").addEventListener("input", () => { if (pvData) { pvData.notes = $("#pvNotes").value; pvChanged(false); } });
+    $("#pvAddStep").addEventListener("click", () => {
+      if (!pvData) return;
+      pvData.steps.push({ name: "", status: "todo", date: "", note: "" });
+      pvChanged(true);
+      const names = document.querySelectorAll("#pvSteps .pv-name");
+      if (names.length) names[names.length - 1].focus();
+    });
+    $("#pvAddCheck").addEventListener("click", () => {
+      if (!pvData) return;
+      pvData.checklist.push({ text: "", done: false, link: "" });
+      pvChanged(true);
+      const names = document.querySelectorAll("#pvChecks .pv-name");
+      if (names.length) names[names.length - 1].focus();
+    });
+    window.addEventListener("pagehide", () => { if (pvDirty) pvSave(); });
     renderAgentResults();
     let tgtTimer;
     $("#target").addEventListener("input", () => {
@@ -1051,7 +1305,7 @@
     sb.auth.onAuthStateChange((event, s) => {
       session = s;
       if (event === "PASSWORD_RECOVERY") { recovering = true; showView("recoverView"); return; }
-      if (!s) { recovering = false; entered = false; userRole = null; apps = []; loaded = false; document.body.classList.remove("ro"); showView("signinView"); return; }
+      if (!s) { recovering = false; entered = false; userRole = null; apps = []; loaded = false; pvData = null; pvDirty = false; $("#privateBtn").hidden = true; document.body.classList.remove("ro"); showView("signinView"); return; }
       if (recovering) return;
       // Route outside the auth callback, as Supabase recommends.
       if (!entered && (event === "INITIAL_SESSION" || event === "SIGNED_IN")) { entered = true; setTimeout(enterApp, 0); }
