@@ -163,11 +163,19 @@
 
   <section id="agent" class="write-only" aria-labelledby="ag-h">
     <div class="sec-head">
-      <div class="t"><p class="eyebrow">Job agent</p><h2 id="ag-h">Find jobs that fit you</h2><p class="muted">Searches Reed.co.uk and Adzuna for your target roles, scores each job against your skills, and flags anything that could rule you out.</p></div>
+      <div class="t"><p class="eyebrow">Job agent</p><h2 id="ag-h">Find jobs that fit you</h2><p class="muted">Pick a profile: tech, security, care or NHS sponsored. The agent searches Reed.co.uk and Adzuna, scores each job for that profile, and flags anything that could rule you out.</p></div>
     </div>
     <div class="panel">
+      <div class="ag-profiles" role="group" aria-label="Search profile">
+        <button class="ag-prof" type="button" data-profile="tech" aria-pressed="true">Tech<small>Data, IT, web</small></button>
+        <button class="ag-prof" type="button" data-profile="security" aria-pressed="false">Security<small>SIA, NHS first</small></button>
+        <button class="ag-prof" type="button" data-profile="care" aria-pressed="false">Care<small>Care and support</small></button>
+        <button class="ag-prof" type="button" data-profile="nhs" aria-pressed="false">NHS sponsored<small>All bands</small></button>
+      </div>
+      <p class="ag-note" id="ag-note" hidden></p>
       <form class="form" id="agentForm" novalidate>
         <label class="full">Job titles to search<textarea class="field" id="ag-terms" rows="6" aria-describedby="ag-terms-hint"></textarea><span class="hint" id="ag-terms-hint">One per line, up to 10.</span></label>
+        <div class="full ag-reset-row"><button class="linkbtn" type="button" id="ag-reset">Use the suggested titles for this profile</button></div>
         <label>Location<input class="field" id="ag-location" placeholder="Hull"></label>
         <label>Distance<select class="field" id="ag-miles">
           <option value="10">Within 10 miles</option>
@@ -177,14 +185,15 @@
         </select></label>
         <label>Sponsorship<select class="field" id="ag-sponsor">
           <option value="all">All jobs</option>
-          <option value="can">Only jobs that can sponsor</option>
+          <option value="advert">Only adverts that offer sponsorship</option>
+          <option value="can">Adverts that offer it, plus licensed sponsors</option>
           <option value="hide-no">Hide jobs that say no sponsorship</option>
         </select></label>
         <div class="full data-actions"><button class="btn primary" type="submit" id="ag-go">Find jobs</button><span class="count" id="ag-status"></span></div>
       </form>
     </div>
     <div id="ag-results"></div>
-    <p class="caption">Jobs from <a href="https://www.reed.co.uk" target="_blank" rel="noopener">Reed.co.uk</a> and <a href="https://www.adzuna.co.uk" target="_blank" rel="noopener">Jobs by Adzuna</a>. Scores use the job title and summary only, so always read the full advert before you apply. Sponsorship labels come from the advert text and the UK register of licensed sponsors, so confirm with the employer before relying on them.</p>
+    <p class="caption">Jobs from <a href="https://www.reed.co.uk" target="_blank" rel="noopener">Reed.co.uk</a> and <a href="https://www.adzuna.co.uk" target="_blank" rel="noopener">Jobs by Adzuna</a>. Scores use the job title and summary only, so always read the full advert before you apply. Sponsorship labels come from the advert text and the UK register of licensed sponsors, so confirm with the employer before relying on them. For Care and NHS, the agent also reads the full Reed advert for the top 30 jobs.</p>
   </section>
 
   <section id="feedback" aria-labelledby="fb-h">

@@ -13,6 +13,11 @@
 
   // ---------- fixed lists ----------
   const TRACKS = C.tracks;
+  // Care and NHS support jobs get their own track, placed before "Other".
+  if (!TRACKS.some(t => t.id === "care")) {
+    const at = TRACKS.findIndex(t => t.id === "other");
+    TRACKS.splice(at < 0 ? TRACKS.length : at, 0, { id: "care", name: "Care & NHS support" });
+  }
   const STATUSES = [
     { id: "saved", label: "To apply", stage: 0, group: "todo" },
     { id: "applied", label: "Applied", stage: 1, group: "active" },
@@ -45,6 +50,81 @@
       "graduate": 2, "junior": 2, "entry level": 2, "trainee": 1
     }
   }, C.agent || {});
+
+  // Search profiles for the job agent. Each one has its own job titles, scoring words and warnings.
+  // extra() can add warning chips (flags) or good chips and returns a number the score is multiplied by.
+  function careExtra(title, text, flags, good) {
+    let m = 1;
+    if (/\bnurse\b/.test(title) && !/assistant|support/.test(title)) { flags.push("Registered nurse role"); m *= 0.3; }
+    if (/zero[- ]hours?/.test(text)) flags.push("Zero hours");
+    if (/apprentice/.test(text)) flags.push("Apprenticeship");
+    if (/training (is )?provided|full training|no experience (is )?(needed|necessary|required)/.test(text)) good.push("Training provided");
+    return m;
+  }
+  const PROFILES = {
+    tech: {
+      label: "Tech", terms: AGENT.terms, location: AGENT.location, miles: AGENT.miles, sponsor: "all",
+      skills: AGENT.skills, divisor: 16, senior: /\b(senior|sr\.?|lead|principal|head of|director)\b/i, clearancePenalty: true
+    },
+    security: {
+      label: "Security (SIA)", location: "", miles: 0, sponsor: "all", noSponsor: true,
+      terms: ["NHS Security Officer", "Hospital Security Officer", "Healthcare Security Officer", "Security Officer", "SIA Door Supervisor",
+        "Retail Security Officer", "CCTV Operator", "Mobile Patrol Officer", "Event Security Officer", "Concierge Security Officer"],
+      skills: { "sia": 3, "door supervisor": 3, "security officer": 3, "nhs": 3, "hospital": 2, "healthcare": 1, "security guard": 2,
+        "retail security": 2, "store detective": 2, "loss prevention": 2, "cctv": 2, "patrol": 1, "static": 1, "manned guarding": 1,
+        "access control": 1, "event": 1, "concierge": 1, "customer service": 1, "first aid": 1, "conflict management": 1, "training provided": 1 },
+      divisor: 12, senior: /\b(manager|head of|director)\b/i, clearancePenalty: false,
+      extra(title, text, flags, good, j) {
+        let bonus = 0;
+        // NHS and hospital jobs go higher up the list, even when only the employer name says NHS.
+        if (/\bnhs\b/.test(text) || /\bnhs\b/i.test(j.employer || "")) { good.push("NHS"); bonus = 30; }
+        else if (/hospital|\bhealth ?care\b/.test(text) || /hospital|health/i.test(j.employer || "")) { good.push("Hospital"); bonus = 15; }
+        if (/cctv (licen[cs]e|operator licen)|public space surveillance|\bpss\b/.test(text)) flags.push("Needs CCTV licence");
+        if (/close protection/.test(text)) flags.push("Needs close protection licence");
+        if (/weekly pay|paid weekly/.test(text)) good.push("Weekly pay");
+        return { m: 1, bonus };
+      },
+      note: "Searches the whole UK, with NHS and hospital security jobs ranked higher. Security officer jobs can't be sponsored on a Skilled Worker visa, so these need your own right to work. Most need a valid SIA licence. Many NHS security jobs are only on NHS Jobs, so check these too:",
+      links: [["NHS Jobs: security officer", "https://www.jobs.nhs.uk/candidate/search/results?keyword=security+officer"],
+        ["NHS Scotland jobs", "https://apply.jobs.scot.nhs.uk/"]]
+    },
+    care: {
+      label: "Care", location: AGENT.location, miles: AGENT.miles, sponsor: "all", checkAdverts: true,
+      terms: ["Care Assistant", "Senior Care Assistant", "Support Worker", "Care Worker", "Healthcare Assistant", "Mental Health Support Worker",
+        "Residential Support Worker", "Learning Disability Support Worker", "Night Care Assistant", "Domiciliary Care Worker"],
+      skills: { "care assistant": 3, "care worker": 3, "support worker": 3, "healthcare assistant": 3, "health care assistant": 3,
+        "carer": 2, "personal care": 2, "care certificate": 2, "no experience": 2, "dementia": 1, "learning disabilit": 1, "mental health": 1,
+        "residential": 1, "nursing home": 1, "care home": 1, "domiciliary": 1, "safeguarding": 1, "training provided": 1, "nvq": 1 },
+      divisor: 12, senior: /\b(manager|head of|director|matron)\b/i, clearancePenalty: false, extra: careExtra,
+      note: "Care worker jobs can't be sponsored from abroad. Someone already in the UK may be able to switch to a care worker visa, usually only after working 3 months for that employer. Check GOV.UK before relying on it."
+    },
+    nhs: {
+      label: "NHS sponsored", location: "", miles: 0, sponsor: "all", checkAdverts: true,
+      terms: ["Healthcare Support Worker", "Senior Healthcare Assistant", "Clinical Support Worker", "Nursing Assistant", "Health Care Assistant NHS",
+        "Senior Healthcare Support Worker", "Mental Health Healthcare Support Worker", "Theatre Support Worker", "Maternity Support Worker", "Assistant Practitioner"],
+      skills: { "healthcare support worker": 3, "health care support worker": 3, "healthcare assistant": 3, "health care assistant": 3, "hcsw": 3, "hca": 2,
+        "nursing assistant": 3, "clinical support worker": 3, "support worker": 2, "band 2": 2, "band 3": 3, "band 4": 3, "assistant practitioner": 2, "nhs": 2, "care certificate": 2,
+        "ward": 1, "patient": 1, "phlebotom": 1, "observations": 1, "hospital": 1, "theatre": 1, "mental health": 1, "maternity": 1 },
+      divisor: 14, senior: /\b(manager|head of|director|matron|sister|charge nurse)\b/i, clearancePenalty: false,
+      extra(title, text, flags, good) {
+        const m = careExtra(title, text, flags, good);
+        // Every band is shown. Band 2 and bank roles get a warning but are not pushed down the list.
+        const bands = [...new Set([...text.matchAll(/\bband ?([2-9])\b/g)].map(x => +x[1]))].sort();
+        for (const b of bands) if (b >= 3) good.push("Band " + b);
+        if (bands.includes(2) && !bands.some(b => b >= 3)) flags.push("Band 2: can't be sponsored");
+        if (/\bbank\b/.test(title) || /\bbank (only|contract|role|position|staff|worker|hca|hcsw)\b|staff bank|nhs professionals|\bnhsp\b/.test(text)) {
+          flags.push("Bank role: can't be sponsored");
+        }
+        return m;
+      },
+      note: "Shows every band. Band 3 support roles can be sponsored until 31 December 2026, if the employer agrees. Band 2 and bank roles get a red warning because they can't be sponsored. For other bands, check the advert. The agent also reads the full Reed advert for the top 30 jobs to see what it says about sponsorship.",
+      links: [["Search NHS Jobs", "https://www.jobs.nhs.uk/candidate/search/results?keyword=healthcare+support+worker"],
+        ["NHS Scotland jobs", "https://apply.jobs.scot.nhs.uk/"]]
+    }
+  };
+  for (const p of Object.values(PROFILES)) {
+    p.res = Object.entries(p.skills).map(([k, w]) => [k, +w || 0, new RegExp("(^|[^a-z0-9])" + k.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")]);
+  }
 
   // ---------- helpers ----------
   // h("div", {class: "x", onclick: fn}, child, "text") builds an element. Text is always inserted as text, never HTML.
@@ -601,53 +681,71 @@
   let agentJobs = [];
   let agentShown = 24;
   let agentSearched = false;
-  const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const SKILL_RES = Object.entries(AGENT.skills).map(([k, w]) => [k, +w || 0, new RegExp("(^|[^a-z0-9])" + escapeRe(k.toLowerCase()), "i")]);
   function readStore(key, fallback) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; } }
   function writeStore(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private browsing */ } }
   const hiddenJobs = () => new Set(readStore("jobAgentHidden", []));
   let agentSponsorList = true;   // false when the sponsor list hasn't been loaded yet
+  let agentProfile = "tech";     // which search profile is showing
+  let agentRun = 0;              // goes up with each search, so late replies from an older search are ignored
+  let agentCounts = "", agentProblem = "";
+  const agentCache = {};         // results per profile, so switching back keeps them
+  const prof = () => PROFILES[agentProfile] || PROFILES.tech;
 
   // Sponsorship label for a job: what the advert says first, then the register of licensed sponsors.
   function sponsorInfo(j) {
     const s = j.sponsor || {};
     if (s.advert === "no") return { key: "no", text: "No sponsorship", cls: "k-overdue" };
+    if (prof().noSponsor) return { key: "rtw", text: "Needs your own right to work", cls: "k-check" };
     if (s.advert === "yes") return { key: "yes", text: s.licensed ? "Sponsorship offered (licensed)" : "Sponsorship offered", cls: "s-offer" };
+    if (s.advert === "maybe") return { key: "maybe", text: s.licensed ? "Sponsorship possible (licensed)" : "Sponsorship possible", cls: "s-assessment" };
     if (s.licensed) return { key: "licensed", text: "Licensed sponsor", cls: "s-applied" };
     if (s.advert === "rtw") return { key: "rtw", text: "Needs right to work", cls: "k-check" };
     if (s.agency) return { key: "agency", text: "Agency: ask about sponsorship", cls: "" };
     return { key: "unknown", text: "Sponsorship unknown", cls: "" };
   }
-  const canSponsor = j => { const k = sponsorInfo(j).key; return k === "yes" || k === "licensed"; };
+  const canSponsor = j => { const k = sponsorInfo(j).key; return k === "yes" || k === "maybe" || k === "licensed"; };
+  const advertOffers = j => { const k = sponsorInfo(j).key; return k === "yes" || k === "maybe"; };
   const SKILL_LABELS = { "data analys": "data analysis", "data scien": "data science", "business analys": "business analysis",
     "scikit": "scikit-learn", "statistic": "statistics", "forecast": "forecasting", "sql": "SQL", "python": "Python", "nlp": "NLP",
     "crm": "CRM", "power bi": "Power BI", "it support": "IT support", "microsoft 365": "Microsoft 365", "office 365": "Office 365",
     "wordpress": "WordPress", "salesforce": "Salesforce", "tensorflow": "TensorFlow", "excel": "Excel", "tableau": "Tableau",
     "web develop": "web development", "html": "HTML", "css": "CSS", "javascript": "JavaScript", "cms": "CMS", "seo": "SEO", "php": "PHP",
-    "front-end": "front end", "frontend": "front end", "google analytics": "Google Analytics", "shopify": "Shopify" };
+    "front-end": "front end", "frontend": "front end", "google analytics": "Google Analytics", "shopify": "Shopify",
+    "sia": "SIA", "cctv": "CCTV", "nhs": "NHS", "band 2": "Band 2", "band 3": "Band 3", "band 4": "Band 4", "phlebotom": "phlebotomy", "hca": "HCA", "hcsw": "HCSW",
+    "learning disabilit": "learning disability", "nvq": "NVQ" };
 
   function scoreJob(j) {
+    const p = prof();
     const title = (j.title || "").toLowerCase();
     const text = (title + " " + (j.summary || "")).toLowerCase();
     let raw = 0;
     const hits = [];
-    for (const [k, w, re] of SKILL_RES) {
+    for (const [k, w, re] of p.res) {
       if (re.test(text)) { raw += w * (re.test(title) ? 2 : 1); hits.push(SKILL_LABELS[k] || k); }
     }
-    let score = Math.min(100, raw / 16 * 100);
+    let score = Math.min(100, raw / p.divisor * 100);
     const flags = [], good = [];
-    if (/\b(senior|sr\.?|lead|principal|head of|director)\b/i.test(j.title || "")) { flags.push("Senior role"); score *= 0.5; }
+    if (p.senior.test(j.title || "")) { flags.push("Senior role"); score *= 0.5; }
     const years = [...text.matchAll(/(\d{1,2})\s*\+?\s*(?:years|yrs)/g)].map(m => +m[1]).filter(n => n >= 3 && n <= 20);
     if (years.length) { flags.push(`Asks for ${Math.max(...years)}+ years`); score *= 0.7; }
-    if (/security clearance|\b(sc|dv)\b (cleared|clearance)/i.test(text)) { flags.push("Security clearance"); score *= 0.8; }
+    if (/security clearance|\b(sc|dv)\b (cleared|clearance)/i.test(text)) { flags.push("Security clearance"); if (p.clearancePenalty) score *= 0.8; }
     if (/driving licen[cs]e|own (car|vehicle|transport)/i.test(text)) flags.push("Driving licence");
     if (/\bphd\b|doctorate/i.test(text)) { flags.push("PhD"); score *= 0.7; }
+    let bonus = 0;   // only changes the order of the list, not the score shown
+    if (p.extra) { const r = p.extra(title, text, flags, good, j); score = Math.min(100, score * (typeof r === "number" ? r : r.m)); bonus = r.bonus || 0; }
     if (/\bgraduate\b|\bentry[- ]level\b|\bjunior\b|\btrainee\b/i.test(text)) good.push("Entry level");
     if (/\bremote\b|work from home/i.test(text)) good.push("Remote");
     else if (/\bhybrid\b/i.test(text)) good.push("Hybrid");
-    return { score: Math.round(score), hits: hits.slice(0, 6), flags, good };
+    const goodSet = new Set(good.map(x => x.toLowerCase()));
+    const flagSet = flags.map(x => x.toLowerCase());
+    const shownHits = hits.filter(x => !goodSet.has(x.toLowerCase()) && !flagSet.some(f => f.startsWith(x.toLowerCase() + ":")));
+    return { score: Math.round(score), rank: score + bonus, hits: shownHits.slice(0, 6), flags, good };
   }
   function guessTrack(j) {
+    const title = (j.title || "").toLowerCase();
+    if (!/cyber|information|\bit\b|data|network|software/.test(title) &&
+      /security (officer|guard|supervisor)|door supervisor|\bsia\b|store detective|cctv operator|patrol officer|loss prevention|concierge security/.test(title)) return "security";
+    if (/health ?care (support|assistant)|nursing assistant|clinical support|care (assistant|worker)|support worker|\bcarer\b|maternity support|assistant practitioner|phlebotom|theatre support/.test(title)) return "care";
     const t = ((j.title || "") + " " + (j.summary || "")).toLowerCase();
     if (/graduate (scheme|programme|program)/.test(t)) return "grad";
     if (/web develop|website|wordpress|front[- ]?end|web content|\bcms\b/.test(t)) return "it";
@@ -734,7 +832,7 @@
     const notHidden = agentJobs.filter(j => !hid.has(j.id));
     const hiddenHere = agentJobs.length - notHidden.length;
     const sf = $("#ag-sponsor").value;
-    const list = notHidden.filter(j => sf === "can" ? canSponsor(j) : sf === "hide-no" ? sponsorInfo(j).key !== "no" : true);
+    const list = notHidden.filter(j => sf === "advert" ? advertOffers(j) : sf === "can" ? canSponsor(j) : sf === "hide-no" ? sponsorInfo(j).key !== "no" : true);
     if (!agentSponsorList) box.append(h("p", { class: "small muted" }, "Sponsor labels only use the advert text right now. Load the sponsor list in Your data to check employers too."));
     if (!list.length) box.append(h("p", { class: "empty" }, !agentJobs.length ? "No jobs found. Try wider distance or different job titles." : !notHidden.length ? "You've hidden every job from this search." : "No jobs match the sponsorship filter. Choose All jobs to see the rest."));
     else {
@@ -763,12 +861,14 @@
     const status = $("#ag-status");
     if (!terms.length) { status.textContent = "Add at least one job title."; return; }
     if (miles && !location) { status.textContent = "Add a location, or choose Anywhere in the UK."; return; }
-    writeStore("jobAgentForm", { terms: terms.join("\n"), location: $("#ag-location").value.trim(), miles });
+    saveAgentForm();
+    const run = ++agentRun;
     const btn = $("#ag-go");
     btn.disabled = true;
     status.textContent = `Searching for ${terms.length} job ${terms.length === 1 ? "title" : "titles"}…`;
     try {
       const { data, error } = await sb.functions.invoke("find-jobs", { body: { terms, location, miles } });
+      if (run !== agentRun) return;
       if (error) {
         let msg = "The job agent couldn't be reached. Check your connection and try again.";
         const ctx = error.context;
@@ -778,22 +878,115 @@
         return;
       }
       agentJobs = (data && Array.isArray(data.jobs) ? data.jobs : []).map(j => ({ ...j, ...scoreJob(j) }))
-        .sort((a, b) => b.score - a.score || (b.posted || "").localeCompare(a.posted || ""));
+        .sort((a, b) => b.rank - a.rank || (b.posted || "").localeCompare(a.posted || ""));
       agentShown = 24;
       agentSearched = true;
       agentSponsorList = !!data.sponsorList;
-      const strong = agentJobs.filter(j => j.score >= 70).length;
-      const sponsorCount = agentJobs.filter(canSponsor).length;
       const c = data.counts || {};
-      const split = [c.Reed ? `${c.Reed} from Reed` : "", c.Adzuna ? `${c.Adzuna} from Adzuna` : ""].filter(Boolean).join(", ");
-      status.textContent = `Found ${agentJobs.length} jobs${split ? " (" + split + ")" : ""}, ${strong} strong ${strong === 1 ? "match" : "matches"}, ${sponsorCount} can sponsor.` + (data.problems && data.problems.length ? " " + data.problems[0] : "");
+      agentCounts = [c.Reed ? `${c.Reed} from Reed` : "", c.Adzuna ? `${c.Adzuna} from Adzuna` : ""].filter(Boolean).join(", ");
+      agentProblem = data.problems && data.problems.length ? data.problems[0] : "";
+      agentStatusText();
       renderAgentResults();
+      btn.disabled = false;
+      if (prof().checkAdverts) await checkFullAdverts(run);
     } catch (err) {
       console.error(err);
-      status.textContent = "Something went wrong. Try again.";
+      if (run === agentRun) status.textContent = "Something went wrong. Try again.";
     } finally {
-      btn.disabled = false;
+      if (run === agentRun) btn.disabled = false;
     }
+  }
+  function agentStatusText(extra) {
+    const strong = agentJobs.filter(j => j.score >= 70).length;
+    let s = `Found ${agentJobs.length} jobs${agentCounts ? " (" + agentCounts + ")" : ""}, ${strong} strong ${strong === 1 ? "match" : "matches"}`;
+    if (prof().noSponsor) s += ".";
+    else {
+      const offers = agentJobs.filter(advertOffers).length, can = agentJobs.filter(canSponsor).length;
+      s += `, ${offers} ${offers === 1 ? "advert offers" : "adverts offer"} sponsorship, ${can} could sponsor in total.`;
+    }
+    $("#ag-status").textContent = s + (extra ? " " + extra : "") + (agentProblem ? " " + agentProblem : "");
+  }
+  // Reed search results only include a short summary, so read the full advert for the top Reed jobs
+  // to see what it says about sponsorship.
+  async function checkFullAdverts(run) {
+    const hid = hiddenJobs();
+    const ids = agentJobs.filter(j => /^reed-\d+$/.test(String(j.id)) && !hid.has(j.id) && !["yes", "no", "maybe"].includes((j.sponsor || {}).advert))
+      .slice(0, 30).map(j => j.id);
+    if (!ids.length) return;
+    agentStatusText("Reading the full adverts for sponsorship…");
+    try {
+      const { data, error } = await sb.functions.invoke("find-jobs", { body: { check: ids } });
+      if (run !== agentRun) return;
+      if (error || !data || !data.checked) { agentStatusText("Couldn't read the full adverts this time."); return; }
+      let changed = 0;
+      for (const j of agentJobs) {
+        const c = data.checked[j.id];
+        if (c && c.advert && c.advert !== (j.sponsor || {}).advert) { j.sponsor = { ...(j.sponsor || {}), advert: c.advert }; changed++; }
+      }
+      agentStatusText(`Checked ${ids.length} full ${ids.length === 1 ? "advert" : "adverts"}.`);
+      if (changed) renderAgentResults();
+    } catch (err) {
+      console.error(err);
+      if (run === agentRun) agentStatusText();
+    }
+  }
+
+  // Each profile remembers its own job titles, location, distance and sponsorship filter on this device.
+  function agentForms() {
+    let all = readStore("jobAgentForms", null);
+    if (!all || typeof all !== "object") {
+      all = {};
+      const old = readStore("jobAgentForm", null);   // saved by the earlier version of the app
+      if (old) all.tech = { terms: old.terms, location: old.location, miles: old.miles, sponsor: readStore("jobAgentSponsor", "all") };
+    }
+    return all;
+  }
+  function formFor(id) {
+    const p = PROFILES[id] || PROFILES.tech, f = agentForms()[id] || {};
+    return { terms: f.terms ? f.terms : p.terms.join("\n"), location: f.location != null ? f.location : p.location,
+      miles: f.miles != null ? +f.miles : p.miles, sponsor: f.sponsor || p.sponsor };
+  }
+  function saveAgentForm() {
+    const all = agentForms();
+    all[agentProfile] = { terms: $("#ag-terms").value, location: $("#ag-location").value.trim(), miles: +$("#ag-miles").value, sponsor: $("#ag-sponsor").value };
+    writeStore("jobAgentForms", all);
+  }
+  function fillAgentForm() {
+    const f = formFor(agentProfile);
+    $("#ag-terms").value = f.terms;
+    $("#ag-location").value = f.location;
+    $("#ag-miles").value = String(f.miles);
+    if (!$("#ag-miles").value) $("#ag-miles").value = "25";
+    $("#ag-sponsor").value = f.sponsor;
+    if (!$("#ag-sponsor").value) $("#ag-sponsor").value = "all";
+  }
+  function renderProfileNote() {
+    const p = prof(), note = $("#ag-note");
+    note.replaceChildren();
+    if (!p.note) { note.hidden = true; return; }
+    note.append(h("span", null, p.note));
+    if (p.links && p.links.length) note.append(h("span", { class: "ag-links" }, p.links.map(([t, u]) => h("a", { href: u, target: "_blank", rel: "noopener" }, t + " ↗"))));
+    note.hidden = false;
+  }
+  function setProfile(id) {
+    if (!PROFILES[id]) id = "tech";
+    if (agentSearched) agentCache[agentProfile] = { jobs: agentJobs, counts: agentCounts, problem: agentProblem, sponsorList: agentSponsorList, status: $("#ag-status").textContent };
+    agentProfile = id;
+    agentRun++;   // ignore any search still running for the old profile
+    writeStore("jobAgentProfile", id);
+    document.querySelectorAll(".ag-prof").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.profile === id)));
+    fillAgentForm();
+    renderProfileNote();
+    const c = agentCache[id];
+    agentJobs = c ? c.jobs : [];
+    agentSearched = !!c;
+    agentCounts = c ? c.counts : "";
+    agentProblem = c ? c.problem : "";
+    if (c) agentSponsorList = c.sponsorList;
+    agentShown = 24;
+    $("#ag-status").textContent = c ? c.status : "";
+    $("#ag-go").disabled = false;
+    renderAgentResults();
   }
 
   // ---------- sponsor list (owner only) ----------
@@ -1247,14 +1440,12 @@
     $("#pd-signout").addEventListener("click", signOut);
     $("#viewersRefresh").addEventListener("click", loadViewers);
     $("#changePw").addEventListener("click", changePassword);
-    const savedForm = readStore("jobAgentForm", null);
-    $("#ag-terms").value = savedForm && savedForm.terms ? savedForm.terms : AGENT.terms.join("\n");
-    $("#ag-location").value = savedForm && savedForm.location != null ? savedForm.location : AGENT.location;
-    $("#ag-miles").value = String(savedForm && savedForm.miles != null ? savedForm.miles : AGENT.miles);
+    document.querySelectorAll(".ag-prof").forEach(b => b.addEventListener("click", () => { if (b.dataset.profile !== agentProfile) { saveAgentForm(); setProfile(b.dataset.profile); } }));
     $("#agentForm").addEventListener("submit", runAgent);
-    $("#ag-sponsor").value = readStore("jobAgentSponsor", "all");
-    if (!$("#ag-sponsor").value) $("#ag-sponsor").value = "all";
-    $("#ag-sponsor").addEventListener("change", () => { writeStore("jobAgentSponsor", $("#ag-sponsor").value); agentShown = 24; renderAgentResults(); });
+    $("#ag-sponsor").addEventListener("change", () => { saveAgentForm(); agentShown = 24; renderAgentResults(); });
+    for (const id of ["#ag-terms", "#ag-location", "#ag-miles"]) $(id).addEventListener("change", saveAgentForm);
+    $("#ag-reset").addEventListener("click", () => { $("#ag-terms").value = prof().terms.join("\n"); saveAgentForm(); });
+    setProfile(readStore("jobAgentProfile", "tech"));
     $("#sponsorBtn").addEventListener("click", () => $("#sponsorFile").click());
     $("#sponsorFile").addEventListener("change", e => { const f = e.target.files && e.target.files[0]; if (f) importSponsors(f); });
     // Private board
