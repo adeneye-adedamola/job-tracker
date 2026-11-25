@@ -30,6 +30,9 @@ window.APP_CONTENT = {
     { id: "security", name: "Security (SIA)", pace: "Fast hiring", cv: "Security CV",
       fit: "SIA licence and years of door and retail security. Steady income alongside your MSc.",
       titles: ["Hospital Security Officer", "Retail Security Officer", "Door Supervisor"] },
+    { id: "admin", name: "Administrative", pace: "Fast hiring", cv: "Education CV",
+      fit: "Years of handling student records, CRM pipelines, emails and scheduling with universities and clients.",
+      titles: ["Administrative Assistant", "Office Administrator", "Admin Officer", "Receptionist", "Data Entry Clerk"] },
     { id: "comms", name: "Digital & comms" },
     { id: "ld", name: "Learning & development" },
     { id: "other", name: "Other" }

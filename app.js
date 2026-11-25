@@ -753,6 +753,7 @@
     if (/business analys|\bcrm\b|salesforce/.test(t)) return "ba";
     if (/\bdata\b|analyst|insight|reporting|machine learning|scien/.test(t)) return "data";
     if (/recruitment|admissions|student/.test(t)) return "edu";
+    if (/administrat|\badmin\b|receptionist|office (assistant|manager|coordinator)|secretary|clerk|data entry|personal assistant/.test(t)) return "admin";
     if (/security officer|door supervisor|\bsia\b/.test(t)) return "security";
     return "other";
   }
