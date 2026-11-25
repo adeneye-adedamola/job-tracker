@@ -14,8 +14,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="styles.css?v=3">
-<link rel="stylesheet" href="extras.css?v=3">
+<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="extras.css?v=4">
 </head>
 <body>
 
@@ -163,7 +163,7 @@
 
   <section id="agent" class="write-only" aria-labelledby="ag-h">
     <div class="sec-head">
-      <div class="t"><p class="eyebrow">Job agent</p><h2 id="ag-h">Find jobs that fit you</h2><p class="muted">Pick a profile: tech, security, care, admin or NHS sponsored. The agent searches Reed.co.uk and Adzuna, scores each job for that profile, and flags anything that could rule you out.</p></div>
+      <div class="t"><p class="eyebrow">Job agent</p><h2 id="ag-h">Find jobs that fit you</h2><p class="muted">Pick a profile: tech, security, care, admin, prison or NHS sponsored. The agent searches Reed.co.uk and Adzuna, scores each job for that profile, and flags anything that could rule you out.</p></div>
     </div>
     <div class="panel">
       <div class="ag-profiles" role="group" aria-label="Search profile">
@@ -171,6 +171,7 @@
         <button class="ag-prof" type="button" data-profile="security" aria-pressed="false">Security<small>SIA, NHS first</small></button>
         <button class="ag-prof" type="button" data-profile="care" aria-pressed="false">Care<small>Care and support</small></button>
         <button class="ag-prof" type="button" data-profile="admin" aria-pressed="false">Admin<small>Office and admin</small></button>
+        <button class="ag-prof" type="button" data-profile="prison" aria-pressed="false">Prison<small>Prison officer</small></button>
         <button class="ag-prof" type="button" data-profile="nhs" aria-pressed="false">NHS sponsored<small>All bands</small></button>
       </div>
       <p class="ag-note" id="ag-note" hidden></p>
@@ -382,9 +383,9 @@
 </div>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="config.js?v=3"></script>
-<script src="content.js?v=3"></script>
+<script src="config.js?v=4"></script>
+<script src="content.js?v=4"></script>
 <script src="vendor/supabase-2.117.2.js"></script>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

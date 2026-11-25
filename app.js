@@ -114,6 +114,26 @@
         return 1;
       }
     },
+    prison: {
+      label: "Prison officer", location: "", miles: 0, sponsor: "all",
+      terms: ["Prison Officer", "Prison Custody Officer", "Custody Officer", "Operational Support Grade", "Youth Justice Worker",
+        "Prisoner Escort Custody Officer", "Detention Custody Officer", "Secure Care Officer", "Operational Support Officer", "Prison Support Worker"],
+      skills: { "prison officer": 3, "prison": 3, "custody officer": 3, "custody": 2, "hmpps": 3, "hmp": 2, "his majesty's prison": 3, "operational support grade": 3,
+        "osg": 2, "youth justice": 2, "secure": 1, "detention": 2, "escort": 1, "rehabilitat": 1, "offender": 1, "probation": 1, "sia": 1,
+        "security": 1, "conflict management": 2, "de-escalat": 2, "control and restraint": 1, "first aid": 1, "full training": 2, "training provided": 2, "no experience": 1 },
+      divisor: 12, senior: /\b(manager|head of|director|governor|supervising officer|custodial manager)\b/i, clearancePenalty: false,
+      extra(title, text, flags, good, j) {
+        let bonus = 0;
+        if (/\bhmpps\b|\bhmp\b|his majesty'?s prison|ministry of justice/.test(text) || /hmpps|ministry of justice|\bhmp\b/i.test(j.employer || "")) { good.push("HMPPS"); bonus = 20; }
+        if (/full training|training (is )?provided|paid training/.test(text)) good.push("Training provided");
+        if (/shift|nights|weekends/.test(text)) good.push("Shift work");
+        if (/driving licen[cs]e/.test(text)) flags.push("Needs driving licence");
+        return { m: 1, bonus };
+      },
+      note: "Searches the whole UK, with HMPPS and Ministry of Justice jobs ranked higher. Most public sector prison officer jobs are on Civil Service Jobs and the HMPPS careers site, so check these too:",
+      links: [["Prison and Probation Jobs", "https://prisonandprobationjobs.gov.uk/"],
+        ["Civil Service Jobs: prison officer", "https://www.civilservicejobs.service.gov.uk/"]]
+    },
     nhs: {
       label: "NHS sponsored", location: "", miles: 0, sponsor: "all", checkAdverts: true,
       terms: ["Healthcare Support Worker", "Senior Healthcare Assistant", "Clinical Support Worker", "Nursing Assistant", "Health Care Assistant NHS",
@@ -761,6 +781,7 @@
     const title = (j.title || "").toLowerCase();
     if (!/cyber|information|\bit\b|data|network|software/.test(title) &&
       /security (officer|guard|supervisor)|door supervisor|\bsia\b|store detective|cctv operator|patrol officer|loss prevention|concierge security/.test(title)) return "security";
+    if (/prison|custody officer|operational support grade|youth justice|detention (custody )?officer|secure care/.test(title)) return "security";
     if (/health ?care (support|assistant)|nursing assistant|clinical support|care (assistant|worker)|support worker|\bcarer\b|maternity support|assistant practitioner|phlebotom|theatre support/.test(title)) return "care";
     const t = ((j.title || "") + " " + (j.summary || "")).toLowerCase();
     if (/graduate (scheme|programme|program)/.test(t)) return "grad";

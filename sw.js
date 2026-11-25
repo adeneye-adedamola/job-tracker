@@ -1,7 +1,7 @@
 // Service worker: lets the tracker install like an app and open without a connection.
 // Same-site files are fetched from the network first (so updates show up straight away)
 // and fall back to the saved copy when offline. Supabase requests are never cached.
-const CACHE = "job-hunt-v4";
+const CACHE = "job-hunt-v5";
 const FILES = [
   "./",
   "./index.html",
