@@ -98,6 +98,22 @@
       divisor: 12, senior: /\b(manager|head of|director|matron)\b/i, clearancePenalty: false, extra: careExtra,
       note: "Care worker jobs can't be sponsored from abroad. Someone already in the UK may be able to switch to a care worker visa, usually only after working 3 months for that employer. Check GOV.UK before relying on it."
     },
+    admin: {
+      label: "Administrative", location: AGENT.location, miles: AGENT.miles, sponsor: "all",
+      terms: ["Administrative Assistant", "Office Administrator", "Admin Officer", "Administrator", "Receptionist",
+        "Data Entry Clerk", "Office Assistant", "Admissions Administrator", "Student Administrator", "Customer Service Administrator"],
+      skills: { "administrat": 3, "admin": 3, "receptionist": 2, "office": 2, "data entry": 2, "microsoft office": 2, "microsoft 365": 1, "office 365": 1,
+        "excel": 2, "word": 1, "outlook": 1, "crm": 2, "salesforce": 1, "customer service": 2, "scheduling": 1, "diary": 1, "filing": 1,
+        "records": 1, "invoic": 1, "student": 1, "admissions": 2, "enquir": 1, "no experience": 1, "entry level": 2, "junior": 1, "training provided": 1 },
+      divisor: 12, senior: /\b(senior|manager|head of|director|lead)\b/i, clearancePenalty: false,
+      extra(title, text, flags, good) {
+        if (/zero[- ]hours?/.test(text)) flags.push("Zero hours");
+        if (/apprentice/.test(text)) flags.push("Apprenticeship");
+        if (/fluent (in )?(welsh|french|german|spanish)|bilingual/.test(text)) flags.push("Needs another language");
+        if (/hybrid|work from home|remote/.test(text)) good.push("Hybrid or remote");
+        return 1;
+      }
+    },
     nhs: {
       label: "NHS sponsored", location: "", miles: 0, sponsor: "all", checkAdverts: true,
       terms: ["Healthcare Support Worker", "Senior Healthcare Assistant", "Clinical Support Worker", "Nursing Assistant", "Health Care Assistant NHS",
